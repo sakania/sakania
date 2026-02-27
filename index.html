@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>An Answer — Playable Prototype</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>An Answer <span>(Ashfall: The Last Ember)</span></h1>
+    <p class="help">Move: WASD/Arrows · Interact: E · Fire stun round: F · Pause: P</p>
+    <div class="hud">
+      <div id="healthBar" class="bar"><i></i><label>Health</label></div>
+      <div id="sanityBar" class="bar"><i></i><label>Sanity</label></div>
+      <div id="meta"></div>
+    </div>
+    <canvas id="game" width="960" height="576"></canvas>
+    <section id="panel" class="panel hidden"></section>
+    <section id="log" class="log"></section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
