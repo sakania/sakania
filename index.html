@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>An Answer — Playable Prototype</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>An Answer <span>(Ashfall: The Last Ember)</span></h1>
+    <p class="help">Move: WASD/Arrows · Interact: E · Fire stun round: F · Pause: P</p>
+    <div class="hud">
+      <div id="healthBar" class="bar"><i></i><label>Health</label></div>
+      <div id="sanityBar" class="bar"><i></i><label>Sanity</label></div>
+      <div id="meta"></div>
+    </div>
+    <canvas id="game" width="960" height="576"></canvas>
+    <section id="panel" class="panel hidden"></section>
+    <section id="log" class="log"></section>
+  </main>
+
+  <section id="titleMenu" class="menu-overlay">
+    <div class="menu-card">
+      <h2 class="menu-title">An Answer</h2>
+      <div class="menu-buttons" id="mainMenuButtons">
+        <button id="playBtn">Play</button>
+        <button id="otherBtn">Other</button>
+      </div>
+
+      <div class="menu-buttons hidden" id="otherMenuButtons">
+        <button id="howBtn">How to Play</button>
+        <button id="settingsBtn">Settings</button>
+        <button id="quitBtn">Quit</button>
+        <button id="backBtn">Back</button>
+      </div>
+
+      <div id="howPanel" class="menu-panel hidden">
+        <h3>How to Play</h3>
+        <p>Explore the academy, collect 3 Library clues, solve the Forge puzzle (ATC), choose a dragon, and survive the Vault ritual until dawn.</p>
+      </div>
+
+      <div id="settingsPanel" class="menu-panel hidden">
+        <h3>Settings</h3>
+        <label>Horror Sound Volume: <input id="volumeSlider" type="range" min="0" max="100" value="45" /></label>
+        <button id="muteToggle">Mute: Off</button>
+      </div>
+
+      <p id="menuNotice" class="menu-notice"></p>
+      <p class="menu-credit">created by Eugene-Grade 9</p>
+    </div>
+  </section>
+
+  <script src="game.js"></script>
+</body>
+</html>
