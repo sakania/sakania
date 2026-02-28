@@ -1,24 +1,84 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>An Answer — Playable Prototype</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <title>3D Horror Survival Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
 </head>
 <body>
-  <main>
-    <h1>An Answer <span>(Ashfall: The Last Ember)</span></h1>
-    <p class="help">Move: WASD/Arrows · Interact: E · Fire stun round: F · Pause: P</p>
-    <div class="hud">
-      <div id="healthBar" class="bar"><i></i><label>Health</label></div>
-      <div id="sanityBar" class="bar"><i></i><label>Sanity</label></div>
-      <div id="meta"></div>
-    </div>
-    <canvas id="game" width="960" height="576"></canvas>
-    <section id="panel" class="panel hidden"></section>
-    <section id="log" class="log"></section>
-  </main>
-  <script src="game.js"></script>
+    <script>
+        // Set up scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Procedural Dungeon Generation
+        function generateDungeon() {
+            // TODO: Implement procedural generation logic
+        }
+
+        // Enemy AI
+        function setupEnemyAI() {
+            // TODO: Implement enemy AI logic
+        }
+
+        // Dragon Companion
+        function addDragonCompanion() {
+            // TODO: Implement dragon companion logic
+        }
+
+        // Sound Management
+        function setupSound() {
+            // TODO: Implement Web Audio for horror sounds
+        }
+
+        // Dynamic Lighting
+        function setupLighting() {
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(5, 10, 7.5);
+            scene.add(light);
+        }
+
+        // Puzzle Solving
+        function setupPuzzles() {
+            // TODO: Implement puzzle solving mechanics
+        }
+
+        // Multiple Endings
+        function setupEndings() {
+            // TODO: Implement multiple ending logic
+        }
+
+        // Initialize game
+        function init() {
+            generateDungeon();
+            setupEnemyAI();
+            addDragonCompanion();
+            setupSound();
+            setupLighting();
+            setupPuzzles();
+            setupEndings();
+
+            camera.position.z = 5;
+            animate();
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            // Update game state
+            renderer.render(scene, camera);
+        }
+
+        // Start game
+        init();
+
+    </script>
 </body>
 </html>
