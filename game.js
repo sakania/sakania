@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 9: DRAGON COMPANION SYSTEM
+// ATC HORROR ECONOMICS GAME - TURN 10: VAULT RITUAL + ENDINGS
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -108,6 +108,7 @@ const UI_TEXT = {
     PRESS_E_INTERACT: "Press E to interact",
     PRESS_E_FORGE: "Press E to answer the Forge",
     PRESS_E_EGG: "Press E to choose this dragon",
+    PRESS_E_RITUAL: "Press E to begin the ritual",
     HEALTH_LABEL: "Health",
     SANITY_LABEL: "Sanity",
     AMMO_LABEL: "Stun Rounds",
@@ -180,6 +181,43 @@ const DRAGON_TYPES = {
     }
 };
 
+// TURN 10: ENDING DATA
+const ENDINGS = {
+    ENDING_A: {
+        title: "ENDING A: THE TRUE BOND",
+        subtitle: "You remembered. The bond is restored.",
+        narrative: [
+            "The ritual circle glows as your Mist Wyrm steps forward. The academy's corruption dissolves like morning fog.",
+            "You remembered the Original Dragon Truth. This is not a hatchling — this is YOUR dragon, fragmented and hidden by the academy's lies.",
+            "The mist clears. Your dragon's true form emerges, no longer bound by the academy's twisted lessons.",
+            "The monster dissolves into ash. The academy's control shatters. You walk free, bond unbroken, mind intact."
+        ],
+        outcome: "FREEDOM — The academy cannot claim you. Your dragon remembers, and so do you."
+    },
+    ENDING_B: {
+        title: "ENDING B: THE CORRUPTED BOND",
+        subtitle: "You chose familiarity, but forgot the truth.",
+        narrative: [
+            "The ritual circle flares as your Mist Wyrm steps forward. Something feels... wrong.",
+            "You never found the Original Dragon Truth. This bond is built on fragments, not memory.",
+            "The dragon shifts, still tainted by the academy's corruption. Your sanity frays at the edges.",
+            "The monster fades, but so does your grip on reality. You leave the vault changed — not free, but not consumed."
+        ],
+        outcome: "SURVIVAL — You escaped, but the bond is incomplete. The academy's mark lingers."
+    },
+    ENDING_C: {
+        title: "ENDING C: THE ACADEMY'S TOOL",
+        subtitle: "You chose power over memory.",
+        narrative: [
+            "The ritual circle ignites as your dragon steps forward. The academy's symbols burn bright.",
+            "You chose the Ember Drake or Volt Serpent — power, utility, survival. But not memory.",
+            "The bond completes, but it was always the academy's design. You are their weapon now, sharp and obedient.",
+            "The monster falls. You walk free, but the academy's lessons remain carved into your mind."
+        ],
+        outcome: "CONTROL — You survived, but the academy shaped you. Their mark is permanent."
+    }
+};
+
 // Room waypoints for monster navigation
 const ROOM_WAYPOINTS = [
     { name: 'Entrance', x: 0, z: 0 },
@@ -220,6 +258,10 @@ class GameState {
         
         this.sprintStartTime = 0;
         this.lowSanityStartTime = 0;
+        
+        // TURN 10: Game over state
+        this.gameOver = false;
+        this.endingType = null;
     }
     
     takeDamage(amount) {
@@ -556,6 +598,113 @@ class DragonCompanion {
         this.active = false;
         this.scene.remove(this.mesh);
         this.scene.remove(this.lightSource);
+    }
+}
+
+// ============================================================================
+// VAULT RITUAL MODAL (TURN 10)
+// ============================================================================
+class VaultRitualModal {
+    constructor(gameManager) {
+        this.gameManager = gameManager;
+        this.modal = document.getElementById('vaultRitualModal');
+        
+        this.setupEvents();
+    }
+    
+    setupEvents() {
+        const beginBtn = document.getElementById('beginRitualBtn');
+        if (beginBtn) {
+            beginBtn.addEventListener('click', () => {
+                this.performRitual();
+            });
+        }
+    }
+    
+    show() {
+        if (this.gameManager.state.ritualCompleted) {
+            this.gameManager.showLoreText(
+                'The Vault',
+                'The ritual is complete. Your fate is sealed.'
+            );
+            return;
+        }
+        
+        if (!this.gameManager.state.dragonChosen) {
+            this.gameManager.showLoreText(
+                'The Vault',
+                'The ritual circle awaits, but you need a dragon companion to complete it.'
+            );
+            return;
+        }
+        
+        this.modal.classList.remove('hidden');
+    }
+    
+    hide() {
+        this.modal.classList.add('hidden');
+    }
+    
+    performRitual() {
+        const state = this.gameManager.state;
+        
+        // Mark ritual as completed
+        state.ritualCompleted = true;
+        state.gameOver = true;
+        
+        // Determine ending based on dragon choice and Original Truth
+        let endingType;
+        
+        if (state.dragon.type === 'MistWyrm' && state.discoveredOriginalDragonTruth) {
+            endingType = 'ENDING_A'; // True bond
+        } else if (state.dragon.type === 'MistWyrm' && !state.discoveredOriginalDragonTruth) {
+            endingType = 'ENDING_B'; // Corrupted bond
+        } else {
+            endingType = 'ENDING_C'; // Academy's tool
+        }
+        
+        state.endingType = endingType;
+        
+        console.log(`✓ Ritual completed: ${endingType}`);
+        console.log(`  - Dragon: ${state.dragon.type}`);
+        console.log(`  - Original Truth: ${state.discoveredOriginalDragonTruth ? 'Discovered' : 'Unknown'}`);
+        
+        this.hide();
+        this.showEnding(endingType);
+    }
+    
+    showEnding(endingType) {
+        const ending = ENDINGS[endingType];
+        const state = this.gameManager.state;
+        
+        const endingModal = document.getElementById('endingModal');
+        
+        document.getElementById('endingTitle').textContent = ending.title;
+        document.getElementById('endingSubtitle').textContent = ending.subtitle;
+        
+        // Build narrative paragraphs
+        const narrativeContainer = document.getElementById('endingNarrative');
+        narrativeContainer.innerHTML = '';
+        ending.narrative.forEach(para => {
+            const p = document.createElement('p');
+            p.textContent = para;
+            narrativeContainer.appendChild(p);
+        });
+        
+        document.getElementById('endingOutcome').textContent = ending.outcome;
+        
+        // Stats
+        document.getElementById('statHealth').textContent = Math.floor(state.health);
+        document.getElementById('statSanity').textContent = Math.floor(state.sanity);
+        document.getElementById('statTrust').textContent = Math.floor(state.dragonTrust);
+        document.getElementById('statDragon').textContent = DRAGON_TYPES[state.dragon.type].name;
+        document.getElementById('statLoreNotes').textContent = `${state.loreNotesCollected}/5`;
+        document.getElementById('statOriginalTruth').textContent = state.discoveredOriginalDragonTruth ? 'Yes' : 'No';
+        
+        endingModal.classList.remove('hidden');
+        
+        // Disable pointer lock
+        document.exitPointerLock();
     }
 }
 
@@ -1053,6 +1202,37 @@ class InteractionSystem {
                             gm.showLoreText(
                                 'The Eggs',
                                 'The choice has been made. Your bond is formed.'
+                            );
+                        }
+                    };
+                }
+                break;
+            }
+            
+            // TURN 10: Vault ritual circle
+            if (obj.userData.interactableType === 'ritual_circle') {
+                if (!gameManager.state.vaultDoorUnlocked) {
+                    this.currentTarget = {
+                        type: 'blocked_ritual',
+                        interact: (gm) => {
+                            gm.showLoreText(
+                                'The Vault',
+                                'The ritual circle is dormant. You need a dragon companion to activate it.'
+                            );
+                        }
+                    };
+                } else if (!gameManager.state.ritualCompleted) {
+                    this.currentTarget = {
+                        type: 'ritual_circle',
+                        interact: (gm) => gm.vaultRitualModal.show()
+                    };
+                } else {
+                    this.currentTarget = {
+                        type: 'completed_ritual',
+                        interact: (gm) => {
+                            gm.showLoreText(
+                                'The Vault',
+                                'The ritual is complete. Your fate is sealed.'
                             );
                         }
                     };
@@ -1587,7 +1767,13 @@ class LevelBuilder {
         );
         circle.position.set(offsetX, 0.05, offsetZ);
         circle.receiveShadow = true;
+        circle.userData.interactableType = 'ritual_circle'; // TURN 10
         this.scene.add(circle);
+        
+        // TURN 10: Ritual circle glow light
+        const ritualLight = new THREE.PointLight(0x8844aa, 3, 5);
+        ritualLight.position.set(offsetX, 0.5, offsetZ);
+        this.scene.add(ritualLight);
     }
     
     createLoreNote(position, data) {
@@ -1634,7 +1820,8 @@ class GameManager {
         this.interactionSystem = null;
         this.monsterAI = null;
         this.forgePuzzle = null;
-        this.dragonChoiceModal = null; // TURN 9
+        this.dragonChoiceModal = null;
+        this.vaultRitualModal = null; // TURN 10
         this.clock = new THREE.Clock();
         
         this.isPointerLocked = false;
@@ -1671,7 +1858,8 @@ class GameManager {
         this.setupInteractions();
         this.setupMonster();
         this.setupForgePuzzle();
-        this.setupDragonChoiceModal(); // TURN 9
+        this.setupDragonChoiceModal();
+        this.setupVaultRitualModal(); // TURN 10
         this.setupPointerLock();
         this.setupGameKeys();
         this.setupTestKeys();
@@ -1742,9 +1930,14 @@ class GameManager {
     }
     
     setupDragonChoiceModal() {
-        // TURN 9: Initialize Dragon Choice Modal
         this.dragonChoiceModal = new DragonChoiceModal(this);
         console.log('Turn 9: Dragon Choice Modal initialized');
+    }
+    
+    setupVaultRitualModal() {
+        // TURN 10: Initialize Vault Ritual Modal
+        this.vaultRitualModal = new VaultRitualModal(this);
+        console.log('Turn 10: Vault Ritual Modal initialized');
     }
     
     setupPointerLock() {
@@ -1768,7 +1961,7 @@ class GameManager {
         });
         
         document.addEventListener('mousemove', (event) => {
-            if (!this.isPointerLocked) return;
+            if (!this.isPointerLocked || this.state.gameOver) return;
             
             const euler = new THREE.Euler(0, 0, 0, 'YXZ');
             euler.setFromQuaternion(this.camera.quaternion);
@@ -1783,7 +1976,7 @@ class GameManager {
     
     setupGameKeys() {
         document.addEventListener('keydown', (event) => {
-            if (!this.isPointerLocked) return;
+            if (!this.isPointerLocked || this.state.gameOver) return;
             
             switch(event.code) {
                 case 'KeyF':
@@ -1912,6 +2105,8 @@ class GameManager {
                 this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_FORGE;
             } else if (this.interactionSystem.currentTarget.type === 'dragon_egg') {
                 this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_EGG;
+            } else if (this.interactionSystem.currentTarget.type === 'ritual_circle') {
+                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_RITUAL;
             } else {
                 this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_INTERACT;
             }
@@ -1976,6 +2171,11 @@ class GameManager {
     }
     
     update(deltaTime) {
+        // TURN 10: Stop updates if game over
+        if (this.state.gameOver) {
+            return;
+        }
+        
         if (this.isPointerLocked && this.player) {
             // TURN 9: Apply speed multiplier (Volt Serpent ability)
             let speedMult = 1.0;
@@ -2022,5 +2222,5 @@ let game;
 
 window.addEventListener('DOMContentLoaded', () => {
     game = new GameManager();
-    console.log('ATC Horror Economics Game - Turn 9: Dragon Companion System initialized');
+    console.log('ATC Horror Economics Game - Turn 10: Vault Ritual + Endings initialized');
 });
