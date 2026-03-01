@@ -254,6 +254,162 @@ canvas {
     color: #e8e8ea;
 }
 
+/* TURN 8: Forge ATC Puzzle Modal Styles */
+.forge-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    backdrop-filter: blur(5px);
+}
+
+.forge-modal-content {
+    background: linear-gradient(145deg, #001100, #003300);
+    border: 3px solid #00ff00;
+    border-radius: 15px;
+    padding: 30px;
+    max-width: 640px;
+    max-height: 80vh;
+    overflow-y: auto;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    box-shadow: 0 0 50px #00ff00;
+}
+
+.forge-modal-content h2 {
+    color: #00ff00;
+    text-align: center;
+    margin-bottom: 20px;
+    text-shadow: 0 0 10px #00ff00;
+    font-size: 24px;
+}
+
+.forge-intro {
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 25px;
+    color: #ccffcc;
+}
+
+.quiz-question p {
+    font-size: 18px;
+    line-height: 1.5;
+    margin-bottom: 25px;
+}
+
+.quiz-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 30px;
+}
+
+.option-btn {
+    background: #222;
+    color: #fff;
+    border: 2px solid #00ff00;
+    padding: 16px;
+    font-size: 18px;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s;
+    text-align: left;
+}
+
+.option-btn:hover:not(:disabled) {
+    background: #00ff00;
+    color: #000;
+    box-shadow: 0 0 20px #00ff00;
+}
+
+.option-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.option-correct {
+    background: #00ff00 !important;
+    color: #000 !important;
+    box-shadow: 0 0 30px #00ff00 !important;
+}
+
+.option-wrong {
+    background: #ff0000 !important;
+    color: #fff !important;
+    box-shadow: 0 0 30px #ff0000 !important;
+}
+
+.math-reveal {
+    background: rgba(0, 20, 0, 0.98);
+    border: 2px solid #ffff00;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 20px 0;
+}
+
+.math-reveal h3 {
+    color: #ffff00;
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.calculation p {
+    font-size: 18px;
+    font-weight: bold;
+    margin: 8px 0;
+    color: #ffff00;
+}
+
+.choice-feedback {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+.continue-btn {
+    width: 100%;
+    background: #00ff00;
+    color: #000;
+    border: none;
+    padding: 14px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 20px;
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s;
+}
+
+.continue-btn:hover {
+    background: #00cc00;
+    box-shadow: 0 0 20px #00ff00;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Screen flicker effect for wrong answers */
+.screen-flicker {
+    animation: forge-flicker 0.1s 20;
+}
+
+@keyframes forge-flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+
 /* Glitch Effect */
 body.glitch {
     animation: glitch 0.22s infinite steps(2);
