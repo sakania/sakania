@@ -77,6 +77,37 @@
         </div>
     </div>
 
+    <!-- TURN 8: Forge ATC Puzzle Modal -->
+    <div id="forgeModal" class="forge-modal-overlay hidden">
+        <div class="forge-modal-content">
+            <h2>FORGE TERMINAL ACTIVE</h2>
+            <p class="forge-intro">The Forge awaits your answer. Remember: ATC includes BOTH the rent-ghost ($2700) and the materials-demon ($300). Divide by quantity (100 units).</p>
+
+            <div class="quiz-question" id="quizQuestion">
+                <p><strong>When it produces 100 units, a firm's total variable cost is $300 and its total fixed cost is $2700. What is the average total cost?</strong></p>
+                <div class="quiz-options">
+                    <button class="option-btn" data-answer="a">a) $30</button>
+                    <button class="option-btn" data-answer="b">b) $3</button>
+                    <button class="option-btn" data-answer="c">c) $24</button>
+                    <button class="option-btn" data-answer="d">d) $27</button>
+                </div>
+            </div>
+
+            <div class="math-reveal hidden" id="mathReveal">
+                <h3>🧮 MATH REVEAL</h3>
+                <div class="calculation">
+                    <p>Total Cost = TFC + TVC</p>
+                    <p>Total Cost = $2700 + $300 = $3000</p>
+                    <p>Average Total Cost = Total Cost ÷ Quantity</p>
+                    <p><strong>ATC = $3000 ÷ 100 = $30</strong></p>
+                    <p><em>Correct answer: a) $30</em></p>
+                </div>
+                <div id="choiceFeedback" class="choice-feedback"></div>
+                <button id="continueBtn" class="continue-btn">CONTINUE</button>
+            </div>
+        </div>
+    </div>
+
     <script src="game.js"></script>
 </body>
 </html>
