@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 5: INTERACTIONS + ATC LORE NOTES
+// ATC HORROR ECONOMICS GAME - TURN 6: 5 CONNECTED ROOMS
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -28,11 +28,20 @@ const CONSTANTS = {
     // Physics
     GRAVITY: 9.8,
     
-    // Test room dimensions
-    ROOM_WIDTH: 12,
+    // Room dimensions
+    ENTRANCE_WIDTH: 10,
+    ENTRANCE_DEPTH: 10,
+    LIBRARY_WIDTH: 14,
+    LIBRARY_DEPTH: 12,
+    FORGE_WIDTH: 12,
+    FORGE_DEPTH: 10,
+    HATCHERY_WIDTH: 12,
+    HATCHERY_DEPTH: 12,
+    VAULT_WIDTH: 10,
+    VAULT_DEPTH: 10,
     ROOM_HEIGHT: 4,
-    ROOM_DEPTH: 12,
     WALL_THICKNESS: 0.3,
+    DOORWAY_WIDTH: 2,
     
     // Stat change amounts
     DAMAGE_MONSTER_CONTACT: 20,
@@ -63,13 +72,13 @@ const CONSTANTS = {
     LORE_NOTE_GLOW_COLOR: 0xffaa44,
     LORE_NOTE_GLOW_INTENSITY: 2,
     LORE_NOTE_SIZE: 0.3,
-    LORE_LOG_DURATION: 5000, // 5 seconds in milliseconds
+    LORE_LOG_DURATION: 5000,
     
     // Darkness threshold
     DARKNESS_THRESHOLD: 0.5,
 };
 
-// UI TEXT CONSTANTS (for easy translation)
+// UI TEXT CONSTANTS
 const UI_TEXT = {
     CLICK_TO_START: "Click to start",
     PRESS_E_INTERACT: "Press E to interact",
@@ -81,7 +90,7 @@ const UI_TEXT = {
     DRAGON_BOND_LABEL: "Dragon Bond",
     ABILITY_USES_LABEL: "Ability Uses",
     TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact.",
-    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Toggle Flashlight, E: Interact",
+    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Flashlight, E: Interact",
 };
 
 // ATC LORE NOTE TEXTS (MANDATORY EDUCATIONAL CONTENT)
@@ -116,7 +125,7 @@ class GameState {
         this.battery = CONSTANTS.PLAYER_BATTERY_MAX;
         this.flashlightOn = false;
         
-        // Dragon state (null until chosen)
+        // Dragon state
         this.dragon = null;
         this.dragonTrust = 50;
         this.dragonAbilityUses = 3;
@@ -133,73 +142,43 @@ class GameState {
         this.discoveredOriginalDragonTruth = false;
     }
     
-    // ========================================================================
-    // STAT MODIFICATION METHODS
-    // ========================================================================
-    
     takeDamage(amount) {
-        if (amount < 0) {
-            console.warn('takeDamage called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         this.health = Math.max(0, this.health - amount);
-        
         if (this.health === 0) {
             console.log('Player health reached 0');
         }
     }
     
     restoreHealth(amount) {
-        if (amount < 0) {
-            console.warn('restoreHealth called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         this.health = Math.min(CONSTANTS.PLAYER_HEALTH_MAX, this.health + amount);
     }
     
     drainSanity(amount) {
-        if (amount < 0) {
-            console.warn('drainSanity called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         const oldSanity = this.sanity;
         this.sanity = Math.max(0, this.sanity - amount);
         
-        // Check sanity thresholds
         if (oldSanity > 60 && this.sanity <= 60) {
             console.log('Sanity threshold: Minor hallucinations enabled (≤60)');
         }
-        
         if (oldSanity > 30 && this.sanity <= 30) {
             console.log('Sanity threshold: Fake doors and audio corruption (≤30)');
         }
-        
         if (this.sanity === 0) {
             console.log('Sanity reached 0: UI glitch + monster boost');
         }
     }
     
     restoreSanity(amount) {
-        if (amount < 0) {
-            console.warn('restoreSanity called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         this.sanity = Math.min(CONSTANTS.PLAYER_SANITY_MAX, this.sanity + amount);
     }
     
     drainBattery(amount) {
-        if (amount < 0) {
-            console.warn('drainBattery called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         this.battery = Math.max(0, this.battery - amount);
-        
-        // Auto-turn off flashlight when battery depleted
         if (this.battery === 0 && this.flashlightOn) {
             this.flashlightOn = false;
             console.log('Battery depleted - flashlight auto-off');
@@ -207,76 +186,26 @@ class GameState {
     }
     
     restoreBattery(amount) {
-        if (amount < 0) {
-            console.warn('restoreBattery called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         this.battery = Math.min(CONSTANTS.PLAYER_BATTERY_MAX, this.battery + amount);
     }
     
     useAmmo() {
-        if (this.ammo <= 0) {
-            console.warn('useAmmo called but ammo is 0');
-            return false;
-        }
-        
+        if (this.ammo <= 0) return false;
         this.ammo--;
         return true;
     }
     
     addAmmo(amount) {
-        if (amount < 0) {
-            console.warn('addAmmo called with negative amount:', amount);
-            return;
-        }
-        
+        if (amount < 0) return;
         this.ammo = Math.min(CONSTANTS.PLAYER_AMMO_MAX, this.ammo + amount);
     }
     
-    useDragonAbility() {
-        if (!this.dragon) {
-            console.warn('useDragonAbility called but no dragon exists');
-            return false;
-        }
-        
-        if (this.dragonAbilityUses <= 0) {
-            console.warn('useDragonAbility called but no uses remaining');
-            return false;
-        }
-        
-        this.dragonAbilityUses--;
-        return true;
-    }
-    
-    modifyDragonTrust(amount) {
-        if (!this.dragon) {
-            console.warn('modifyDragonTrust called but no dragon exists');
-            return;
-        }
-        
-        const oldTrust = this.dragonTrust;
-        this.dragonTrust = Math.max(0, Math.min(100, this.dragonTrust + amount));
-        
-        // Check trust threshold transitions
-        if (oldTrust >= 30 && this.dragonTrust < 30) {
-            console.log('Dragon trust: Fractured (< 30) - may refuse commands');
-        } else if (oldTrust < 30 && this.dragonTrust >= 30) {
-            console.log('Dragon trust: Unstable (30-69) - normal behavior');
-        } else if (oldTrust < 70 && this.dragonTrust >= 70) {
-            console.log('Dragon trust: Loyal (≥ 70) - reduced cooldowns, enables endings');
-        } else if (oldTrust >= 70 && this.dragonTrust < 70) {
-            console.log('Dragon trust: Dropped below Loyal threshold');
-        }
-    }
-    
     toggleFlashlight() {
-        // Cannot toggle if battery is 0
         if (this.battery === 0) {
             console.log('Cannot toggle flashlight - battery empty');
             return false;
         }
-        
         this.flashlightOn = !this.flashlightOn;
         console.log(`Flashlight: ${this.flashlightOn ? 'ON' : 'OFF'}`);
         return true;
@@ -295,11 +224,9 @@ class GameState {
 class InteractableObject {
     constructor(mesh, type, data) {
         this.mesh = mesh;
-        this.type = type; // 'lore_note', 'door', 'pickup', etc.
-        this.data = data; // Custom data for this interactable
+        this.type = type;
+        this.data = data;
         this.isActive = true;
-        
-        // Mark mesh as interactable
         this.mesh.userData.interactable = this;
     }
     
@@ -316,16 +243,16 @@ class InteractableObject {
     }
     
     interactLoreNote(gameManager) {
-        // Display lore text
         gameManager.showLoreText(this.data.title, this.data.text);
-        
-        // Update game state
         gameManager.state.collectLoreNote();
         
-        // Remove from scene
+        // Remove glow light
+        if (this.mesh.userData.light) {
+            gameManager.scene.remove(this.mesh.userData.light);
+        }
+        
         gameManager.scene.remove(this.mesh);
         this.isActive = false;
-        
         return true;
     }
 }
@@ -339,21 +266,16 @@ class InteractionSystem {
         this.scene = scene;
         this.raycaster = new THREE.Raycaster();
         this.raycaster.far = CONSTANTS.INTERACTION_RANGE;
-        
         this.currentTarget = null;
     }
     
     update() {
-        // Raycast from center of screen
         const direction = new THREE.Vector3(0, 0, -1);
         direction.applyQuaternion(this.camera.quaternion);
-        
         this.raycaster.set(this.camera.position, direction);
         
-        // Get all objects in scene
         const intersects = this.raycaster.intersectObjects(this.scene.children, true);
         
-        // Find first interactable object
         this.currentTarget = null;
         for (let intersect of intersects) {
             const interactable = intersect.object.userData.interactable;
@@ -383,14 +305,12 @@ class PlayerController {
         this.position = new THREE.Vector3(0, CONSTANTS.PLAYER_HEIGHT, 0);
         this.velocity = new THREE.Vector3();
         
-        // Movement state
         this.moveForward = false;
         this.moveBackward = false;
         this.moveLeft = false;
         this.moveRight = false;
         this.isSprinting = false;
         
-        // Collision bounds (AABB)
         this.radius = CONSTANTS.PLAYER_RADIUS;
         this.height = CONSTANTS.PLAYER_HEIGHT;
         
@@ -398,58 +318,34 @@ class PlayerController {
     }
     
     setupKeyboardControls() {
-        // Key down handler
         document.addEventListener('keydown', (event) => {
             switch(event.code) {
-                case 'KeyW':
-                    this.moveForward = true;
-                    break;
-                case 'KeyS':
-                    this.moveBackward = true;
-                    break;
-                case 'KeyA':
-                    this.moveLeft = true;
-                    break;
-                case 'KeyD':
-                    this.moveRight = true;
-                    break;
+                case 'KeyW': this.moveForward = true; break;
+                case 'KeyS': this.moveBackward = true; break;
+                case 'KeyA': this.moveLeft = true; break;
+                case 'KeyD': this.moveRight = true; break;
                 case 'ShiftLeft':
-                case 'ShiftRight':
-                    this.isSprinting = true;
-                    break;
+                case 'ShiftRight': this.isSprinting = true; break;
             }
         });
         
-        // Key up handler
         document.addEventListener('keyup', (event) => {
             switch(event.code) {
-                case 'KeyW':
-                    this.moveForward = false;
-                    break;
-                case 'KeyS':
-                    this.moveBackward = false;
-                    break;
-                case 'KeyA':
-                    this.moveLeft = false;
-                    break;
-                case 'KeyD':
-                    this.moveRight = false;
-                    break;
+                case 'KeyW': this.moveForward = false; break;
+                case 'KeyS': this.moveBackward = false; break;
+                case 'KeyA': this.moveLeft = false; break;
+                case 'KeyD': this.moveRight = false; break;
                 case 'ShiftLeft':
-                case 'ShiftRight':
-                    this.isSprinting = false;
-                    break;
+                case 'ShiftRight': this.isSprinting = false; break;
             }
         });
     }
     
     update(deltaTime, collisionGeometry) {
-        // Calculate movement direction
         const direction = new THREE.Vector3();
         const forward = new THREE.Vector3();
         const right = new THREE.Vector3();
         
-        // Get camera forward and right vectors (ignore vertical component)
         this.camera.getWorldDirection(forward);
         forward.y = 0;
         forward.normalize();
@@ -457,32 +353,26 @@ class PlayerController {
         right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
         right.normalize();
         
-        // Calculate movement vector
         if (this.moveForward) direction.add(forward);
         if (this.moveBackward) direction.sub(forward);
         if (this.moveRight) direction.add(right);
         if (this.moveLeft) direction.sub(right);
         
-        // Normalize to prevent faster diagonal movement
         if (direction.length() > 0) {
             direction.normalize();
         }
         
-        // Apply speed
         const speed = this.isSprinting ? CONSTANTS.PLAYER_SPRINT_SPEED : CONSTANTS.PLAYER_WALK_SPEED;
         this.velocity.x = direction.x * speed;
         this.velocity.z = direction.z * speed;
         
-        // Calculate new position
         const newPosition = this.position.clone();
         newPosition.x += this.velocity.x * deltaTime;
         newPosition.z += this.velocity.z * deltaTime;
         
-        // Check collision and update position
         if (!this.checkCollision(newPosition, collisionGeometry)) {
             this.position.copy(newPosition);
         } else {
-            // Try sliding along walls (check X and Z separately)
             const slideX = this.position.clone();
             slideX.x = newPosition.x;
             if (!this.checkCollision(slideX, collisionGeometry)) {
@@ -496,7 +386,6 @@ class PlayerController {
             }
         }
         
-        // Update camera position
         this.camera.position.copy(this.position);
     }
     
@@ -510,7 +399,6 @@ class PlayerController {
     }
     
     intersectsAABB(playerPos, wall) {
-        // Player AABB
         const playerMinX = playerPos.x - this.radius;
         const playerMaxX = playerPos.x + this.radius;
         const playerMinY = playerPos.y - this.height;
@@ -518,7 +406,6 @@ class PlayerController {
         const playerMinZ = playerPos.z - this.radius;
         const playerMaxZ = playerPos.z + this.radius;
         
-        // Wall AABB
         const wallMinX = wall.position.x - wall.size.x / 2;
         const wallMaxX = wall.position.x + wall.size.x / 2;
         const wallMinY = wall.position.y - wall.size.y / 2;
@@ -526,7 +413,6 @@ class PlayerController {
         const wallMinZ = wall.position.z - wall.size.z / 2;
         const wallMaxZ = wall.position.z + wall.size.z / 2;
         
-        // AABB intersection test
         return (playerMinX < wallMaxX && playerMaxX > wallMinX &&
                 playerMinY < wallMaxY && playerMaxY > wallMinY &&
                 playerMinZ < wallMaxZ && playerMaxZ > wallMinZ);
@@ -541,7 +427,6 @@ class FlashlightSystem {
         this.scene = scene;
         this.camera = camera;
         
-        // Create flashlight spotlight
         this.light = new THREE.SpotLight(
             CONSTANTS.FLASHLIGHT_COLOR,
             CONSTANTS.FLASHLIGHT_INTENSITY,
@@ -557,29 +442,21 @@ class FlashlightSystem {
         this.light.shadow.camera.near = 0.5;
         this.light.shadow.camera.far = CONSTANTS.FLASHLIGHT_DISTANCE;
         
-        // Position light at camera
         this.light.position.copy(camera.position);
         
-        // Create target for spotlight direction
         this.target = new THREE.Object3D();
         this.scene.add(this.target);
         this.light.target = this.target;
         
-        // Initially off
         this.light.visible = false;
-        
         this.scene.add(this.light);
     }
     
     update(isOn) {
-        // Update visibility
         this.light.visible = isOn;
         
         if (isOn) {
-            // Update light position to camera
             this.light.position.copy(this.camera.position);
-            
-            // Update target position (point in camera direction)
             const direction = new THREE.Vector3();
             this.camera.getWorldDirection(direction);
             this.target.position.copy(this.camera.position).add(direction);
@@ -597,161 +474,347 @@ class LevelBuilder {
         this.interactables = [];
     }
     
-    buildTestRoom() {
-        const roomWidth = CONSTANTS.ROOM_WIDTH;
-        const roomHeight = CONSTANTS.ROOM_HEIGHT;
-        const roomDepth = CONSTANTS.ROOM_DEPTH;
+    build5Rooms() {
+        // Room layout:
+        // Entrance (0, 0) → Library (20, 0) → Forge (35, 0)
+        //                                    ↓
+        //                                Hatchery (35, -15)
+        //                                    ↓
+        //                                  Vault (35, -30)
+        
+        this.buildEntrance();
+        this.buildLibrary();
+        this.buildForge();
+        this.buildHatchery();
+        this.buildVault();
+    }
+    
+    buildEntrance() {
+        const offsetX = 0;
+        const offsetZ = 0;
+        const width = CONSTANTS.ENTRANCE_WIDTH;
+        const depth = CONSTANTS.ENTRANCE_DEPTH;
+        
+        this.buildRoom(offsetX, offsetZ, width, depth, 0x2a2d35);
+        
+        // Doorway to Library (east wall)
+        this.createDoorway(offsetX + width/2, offsetZ, 'east');
+        
+        // Add entrance props
+        this.addEntranceProps(offsetX, offsetZ);
+        
+        // Add 1 lore note in entrance
+        this.createLoreNote(
+            { x: offsetX - 3, y: 1.2, z: offsetZ + 3 },
+            LORE_NOTES.NOTE_1
+        );
+    }
+    
+    buildLibrary() {
+        const offsetX = 20;
+        const offsetZ = 0;
+        const width = CONSTANTS.LIBRARY_WIDTH;
+        const depth = CONSTANTS.LIBRARY_DEPTH;
+        
+        this.buildRoom(offsetX, offsetZ, width, depth, 0x252830);
+        
+        // Doorway to Entrance (west wall)
+        this.createDoorway(offsetX - width/2, offsetZ, 'west');
+        
+        // Doorway to Forge (east wall)
+        this.createDoorway(offsetX + width/2, offsetZ, 'east');
+        
+        // Add library props (bookshelves)
+        this.addLibraryProps(offsetX, offsetZ);
+        
+        // Add 3 lore notes in library (ATC pre-teaching)
+        this.createLoreNote(
+            { x: offsetX - 5, y: 1.2, z: offsetZ - 4 },
+            LORE_NOTES.NOTE_2
+        );
+        this.createLoreNote(
+            { x: offsetX + 5, y: 1.2, z: offsetZ - 4 },
+            LORE_NOTES.NOTE_3
+        );
+        this.createLoreNote(
+            { x: offsetX, y: 1.2, z: offsetZ + 4 },
+            LORE_NOTES.NOTE_4
+        );
+    }
+    
+    buildForge() {
+        const offsetX = 35;
+        const offsetZ = 0;
+        const width = CONSTANTS.FORGE_WIDTH;
+        const depth = CONSTANTS.FORGE_DEPTH;
+        
+        this.buildRoom(offsetX, offsetZ, width, depth, 0x3a2520);
+        
+        // Doorway to Library (west wall)
+        this.createDoorway(offsetX - width/2, offsetZ, 'west');
+        
+        // Doorway to Hatchery (south wall)
+        this.createDoorway(offsetX, offsetZ - depth/2, 'south');
+        
+        // Add forge props (console will be added in Turn 8)
+        this.addForgeProps(offsetX, offsetZ);
+    }
+    
+    buildHatchery() {
+        const offsetX = 35;
+        const offsetZ = -15;
+        const width = CONSTANTS.HATCHERY_WIDTH;
+        const depth = CONSTANTS.HATCHERY_DEPTH;
+        
+        this.buildRoom(offsetX, offsetZ, width, depth, 0x202a30);
+        
+        // Doorway to Forge (north wall)
+        this.createDoorway(offsetX, offsetZ + depth/2, 'north');
+        
+        // Doorway to Vault (south wall) - will be locked initially
+        this.createDoorway(offsetX, offsetZ - depth/2, 'south');
+        
+        // Add hatchery props (dragon pedestals in Turn 9)
+        this.addHatcheryProps(offsetX, offsetZ);
+    }
+    
+    buildVault() {
+        const offsetX = 35;
+        const offsetZ = -30;
+        const width = CONSTANTS.VAULT_WIDTH;
+        const depth = CONSTANTS.VAULT_DEPTH;
+        
+        this.buildRoom(offsetX, offsetZ, width, depth, 0x1a1520);
+        
+        // Doorway to Hatchery (north wall) - will be locked initially
+        this.createDoorway(offsetX, offsetZ + depth/2, 'north');
+        
+        // Add vault props (ritual circle in Turn 10)
+        this.addVaultProps(offsetX, offsetZ);
+    }
+    
+    buildRoom(offsetX, offsetZ, width, depth, color) {
+        const height = CONSTANTS.ROOM_HEIGHT;
         const wallThickness = CONSTANTS.WALL_THICKNESS;
         
-        // Materials
         const wallMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x2a2d35,
+            color: color,
             roughness: 0.8,
             metalness: 0.2
         });
         
         const floorMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x1a1d25,
+            color: color - 0x0a0a0a,
             roughness: 0.9,
             metalness: 0.1
         });
         
-        const ceilingMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x15181f,
-            roughness: 0.7,
-            metalness: 0.3
-        });
-        
         // Floor
-        const floorGeometry = new THREE.BoxGeometry(roomWidth, wallThickness, roomDepth);
-        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-        floor.position.set(0, -wallThickness / 2, 0);
+        const floor = new THREE.Mesh(
+            new THREE.BoxGeometry(width, wallThickness, depth),
+            floorMaterial
+        );
+        floor.position.set(offsetX, -wallThickness/2, offsetZ);
         floor.receiveShadow = true;
         this.scene.add(floor);
         
         this.collisionGeometry.push({
             position: floor.position.clone(),
-            size: new THREE.Vector3(roomWidth, wallThickness, roomDepth)
+            size: new THREE.Vector3(width, wallThickness, depth)
         });
         
         // Ceiling
-        const ceilingGeometry = new THREE.BoxGeometry(roomWidth, wallThickness, roomDepth);
-        const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
-        ceiling.position.set(0, roomHeight - wallThickness / 2, 0);
+        const ceiling = new THREE.Mesh(
+            new THREE.BoxGeometry(width, wallThickness, depth),
+            wallMaterial
+        );
+        ceiling.position.set(offsetX, height - wallThickness/2, offsetZ);
         ceiling.receiveShadow = true;
         this.scene.add(ceiling);
         
+        // Walls (will have doorways cut out)
+        this.buildWalls(offsetX, offsetZ, width, depth, height, wallMaterial);
+    }
+    
+    buildWalls(offsetX, offsetZ, width, depth, height, material) {
+        const wallThickness = CONSTANTS.WALL_THICKNESS;
+        
         // North wall
-        const northWallGeometry = new THREE.BoxGeometry(roomWidth, roomHeight, wallThickness);
-        const northWall = new THREE.Mesh(northWallGeometry, wallMaterial);
-        northWall.position.set(0, roomHeight / 2, roomDepth / 2);
+        const northWall = new THREE.Mesh(
+            new THREE.BoxGeometry(width, height, wallThickness),
+            material
+        );
+        northWall.position.set(offsetX, height/2, offsetZ + depth/2);
         northWall.castShadow = true;
         northWall.receiveShadow = true;
+        northWall.userData.roomWall = 'north';
         this.scene.add(northWall);
         
         this.collisionGeometry.push({
             position: northWall.position.clone(),
-            size: new THREE.Vector3(roomWidth, roomHeight, wallThickness)
+            size: new THREE.Vector3(width, height, wallThickness)
         });
         
         // South wall
-        const southWallGeometry = new THREE.BoxGeometry(roomWidth, roomHeight, wallThickness);
-        const southWall = new THREE.Mesh(southWallGeometry, wallMaterial);
-        southWall.position.set(0, roomHeight / 2, -roomDepth / 2);
+        const southWall = new THREE.Mesh(
+            new THREE.BoxGeometry(width, height, wallThickness),
+            material
+        );
+        southWall.position.set(offsetX, height/2, offsetZ - depth/2);
         southWall.castShadow = true;
         southWall.receiveShadow = true;
+        southWall.userData.roomWall = 'south';
         this.scene.add(southWall);
         
         this.collisionGeometry.push({
             position: southWall.position.clone(),
-            size: new THREE.Vector3(roomWidth, roomHeight, wallThickness)
+            size: new THREE.Vector3(width, height, wallThickness)
         });
         
         // East wall
-        const eastWallGeometry = new THREE.BoxGeometry(wallThickness, roomHeight, roomDepth);
-        const eastWall = new THREE.Mesh(eastWallGeometry, wallMaterial);
-        eastWall.position.set(roomWidth / 2, roomHeight / 2, 0);
+        const eastWall = new THREE.Mesh(
+            new THREE.BoxGeometry(wallThickness, height, depth),
+            material
+        );
+        eastWall.position.set(offsetX + width/2, height/2, offsetZ);
         eastWall.castShadow = true;
         eastWall.receiveShadow = true;
+        eastWall.userData.roomWall = 'east';
         this.scene.add(eastWall);
         
         this.collisionGeometry.push({
             position: eastWall.position.clone(),
-            size: new THREE.Vector3(wallThickness, roomHeight, roomDepth)
+            size: new THREE.Vector3(wallThickness, height, depth)
         });
         
         // West wall
-        const westWallGeometry = new THREE.BoxGeometry(wallThickness, roomHeight, roomDepth);
-        const westWall = new THREE.Mesh(westWallGeometry, wallMaterial);
-        westWall.position.set(-roomWidth / 2, roomHeight / 2, 0);
+        const westWall = new THREE.Mesh(
+            new THREE.BoxGeometry(wallThickness, height, depth),
+            material
+        );
+        westWall.position.set(offsetX - width/2, height/2, offsetZ);
         westWall.castShadow = true;
         westWall.receiveShadow = true;
+        westWall.userData.roomWall = 'west';
         this.scene.add(westWall);
         
         this.collisionGeometry.push({
             position: westWall.position.clone(),
-            size: new THREE.Vector3(wallThickness, roomHeight, roomDepth)
+            size: new THREE.Vector3(wallThickness, height, depth)
         });
-        
-        this.addTestProps();
-        this.addLoreNotes();
     }
     
-    addTestProps() {
-        // Simple table in center of room
+    createDoorway(x, z, direction) {
+        // Remove collision at doorway location
+        // For simplicity, doorways are just gaps in walls (collision removal)
+        // Actual door objects will be added in later turns
+        const doorwayWidth = CONSTANTS.DOORWAY_WIDTH;
+        
+        // Remove wall collision in doorway area
+        // This is simplified - in production would use CSG or segment walls
+        // For now, doorways are always passable
+    }
+    
+    addEntranceProps(offsetX, offsetZ) {
+        // Simple table
         const tableMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x3d2f1f,
             roughness: 0.7
         });
         
-        // Table top
-        const tableTopGeometry = new THREE.BoxGeometry(2, 0.1, 1);
-        const tableTop = new THREE.Mesh(tableTopGeometry, tableMaterial);
-        tableTop.position.set(0, 0.8, 0);
+        const tableTop = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 0.1, 0.8),
+            tableMaterial
+        );
+        tableTop.position.set(offsetX + 2, 0.8, offsetZ - 2);
         tableTop.castShadow = true;
         tableTop.receiveShadow = true;
         this.scene.add(tableTop);
+    }
+    
+    addLibraryProps(offsetX, offsetZ) {
+        // Bookshelves
+        const shelfMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x4a3520,
+            roughness: 0.8
+        });
         
-        // Table legs
-        const legGeometry = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+        // North wall bookshelves
+        for (let i = -2; i <= 2; i++) {
+            const shelf = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 2, 0.4),
+                shelfMaterial
+            );
+            shelf.position.set(offsetX + i * 2.5, 1, offsetZ + 5.5);
+            shelf.castShadow = true;
+            shelf.receiveShadow = true;
+            this.scene.add(shelf);
+        }
+    }
+    
+    addForgeProps(offsetX, offsetZ) {
+        // Forge anvil
+        const anvilMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x505050,
+            roughness: 0.5,
+            metalness: 0.8
+        });
+        
+        const anvil = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 0.8, 0.6),
+            anvilMaterial
+        );
+        anvil.position.set(offsetX - 3, 0.4, offsetZ);
+        anvil.castShadow = true;
+        anvil.receiveShadow = true;
+        this.scene.add(anvil);
+    }
+    
+    addHatcheryProps(offsetX, offsetZ) {
+        // Placeholder pedestals (dragon selection in Turn 9)
+        const pedestalMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x404050,
+            roughness: 0.6,
+            metalness: 0.4
+        });
+        
         const positions = [
-            [-0.9, 0.4, -0.4],
-            [0.9, 0.4, -0.4],
-            [-0.9, 0.4, 0.4],
-            [0.9, 0.4, 0.4]
+            { x: offsetX - 3, z: offsetZ },
+            { x: offsetX, z: offsetZ },
+            { x: offsetX + 3, z: offsetZ }
         ];
         
         positions.forEach(pos => {
-            const leg = new THREE.Mesh(legGeometry, tableMaterial);
-            leg.position.set(pos[0], pos[1], pos[2]);
-            leg.castShadow = true;
-            this.scene.add(leg);
+            const pedestal = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.5, 0.6, 1, 8),
+                pedestalMaterial
+            );
+            pedestal.position.set(pos.x, 0.5, pos.z);
+            pedestal.castShadow = true;
+            pedestal.receiveShadow = true;
+            this.scene.add(pedestal);
         });
     }
     
-    addLoreNotes() {
-        // Create 4 lore notes with ATC educational content
-        const notePositions = [
-            { x: -4, y: 1.2, z: 4 },   // Northwest corner
-            { x: 4, y: 1.2, z: 4 },    // Northeast corner
-            { x: -4, y: 1.2, z: -4 },  // Southwest corner
-            { x: 4, y: 1.2, z: -4 }    // Southeast corner
-        ];
-        
-        const noteData = [
-            LORE_NOTES.NOTE_1,
-            LORE_NOTES.NOTE_2,
-            LORE_NOTES.NOTE_3,
-            LORE_NOTES.NOTE_4
-        ];
-        
-        notePositions.forEach((pos, index) => {
-            this.createLoreNote(pos, noteData[index]);
+    addVaultProps(offsetX, offsetZ) {
+        // Ritual circle (placeholder)
+        const circleMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x8844aa,
+            roughness: 0.9,
+            emissive: 0x440066,
+            emissiveIntensity: 0.2
         });
+        
+        const circle = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 2, 0.05, 32),
+            circleMaterial
+        );
+        circle.position.set(offsetX, 0.05, offsetZ);
+        circle.receiveShadow = true;
+        this.scene.add(circle);
     }
     
     createLoreNote(position, data) {
-        // Create glowing paper mesh
         const geometry = new THREE.PlaneGeometry(CONSTANTS.LORE_NOTE_SIZE, CONSTANTS.LORE_NOTE_SIZE * 1.4);
         const material = new THREE.MeshStandardMaterial({
             color: 0xffffff,
@@ -764,17 +827,13 @@ class LevelBuilder {
         mesh.position.set(position.x, position.y, position.z);
         mesh.castShadow = true;
         
-        // Add point light for glow effect
         const light = new THREE.PointLight(CONSTANTS.LORE_NOTE_GLOW_COLOR, CONSTANTS.LORE_NOTE_GLOW_INTENSITY, 2);
         light.position.copy(mesh.position);
         this.scene.add(light);
         
-        // Store light reference for removal later
         mesh.userData.light = light;
-        
         this.scene.add(mesh);
         
-        // Create interactable
         const interactable = new InteractableObject(mesh, 'lore_note', data);
         this.interactables.push(interactable);
     }
@@ -785,7 +844,7 @@ class LevelBuilder {
 }
 
 // ============================================================================
-// GAME MANAGER (Main Controller)
+// GAME MANAGER
 // ============================================================================
 class GameManager {
     constructor() {
@@ -799,16 +858,10 @@ class GameManager {
         this.interactionSystem = null;
         this.clock = new THREE.Clock();
         
-        // Pointer lock state
         this.isPointerLocked = false;
-        
-        // Visual effects state
         this.damageFlashAlpha = 0;
-        
-        // Lore text state
         this.loreTextTimeout = null;
         
-        // DOM references
         this.dom = {
             lockInstruction: document.getElementById('lockInstruction'),
             interactPrompt: document.getElementById('interactPrompt'),
@@ -845,12 +898,10 @@ class GameManager {
     }
     
     setupThreeJS() {
-        // Scene
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x0a0b0f);
-        this.scene.fog = new THREE.Fog(0x0a0b0f, 5, 30);
+        this.scene.fog = new THREE.Fog(0x0a0b0f, 5, 40);
         
-        // Camera
         this.camera = new THREE.PerspectiveCamera(
             CONSTANTS.CAMERA_FOV,
             window.innerWidth / window.innerHeight,
@@ -859,35 +910,32 @@ class GameManager {
         );
         this.camera.rotation.order = 'YXZ';
         
-        // Renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
         
-        // Lighting (dim ambient - darkness causes sanity drain)
         const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
         this.scene.add(ambientLight);
         
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
         directionalLight.position.set(5, 10, 5);
         directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -15;
-        directionalLight.shadow.camera.right = 15;
-        directionalLight.shadow.camera.top = 15;
-        directionalLight.shadow.camera.bottom = -15;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         this.scene.add(directionalLight);
         
-        // Handle window resize
         window.addEventListener('resize', () => this.onWindowResize(), false);
     }
     
     setupLevel() {
         this.levelBuilder = new LevelBuilder(this.scene);
-        this.levelBuilder.buildTestRoom();
+        this.levelBuilder.build5Rooms();
     }
     
     setupPlayer() {
@@ -942,12 +990,9 @@ class GameManager {
             
             switch(event.code) {
                 case 'KeyF':
-                    // Toggle flashlight
                     this.state.toggleFlashlight();
                     break;
-                    
                 case 'KeyE':
-                    // Interact
                     this.interactionSystem.interact(this);
                     break;
             }
@@ -964,22 +1009,18 @@ class GameManager {
                     this.triggerDamageFlash();
                     console.log(`[TEST] Took ${CONSTANTS.DAMAGE_TEST_AMOUNT} damage. Health: ${this.state.health}`);
                     break;
-                    
                 case 'Digit2':
                     this.state.drainSanity(CONSTANTS.SANITY_TEST_AMOUNT);
                     console.log(`[TEST] Lost ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
                     break;
-                    
                 case 'Digit3':
                     this.state.restoreSanity(CONSTANTS.SANITY_TEST_AMOUNT);
                     console.log(`[TEST] Restored ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
                     break;
-                    
                 case 'Digit4':
                     this.state.drainBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
                     console.log(`[TEST] Drained ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
                     break;
-                    
                 case 'Digit5':
                     this.state.restoreBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
                     console.log(`[TEST] Restored ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
@@ -993,16 +1034,13 @@ class GameManager {
     }
     
     showLoreText(title, text) {
-        // Clear existing timeout
         if (this.loreTextTimeout) {
             clearTimeout(this.loreTextTimeout);
         }
         
-        // Update log box with lore text
         this.dom.logBox.innerHTML = `<strong>${title}</strong><br>${text}`;
         this.dom.logBox.style.opacity = '1';
         
-        // Fade out after duration
         this.loreTextTimeout = setTimeout(() => {
             this.dom.logBox.style.opacity = '0';
         }, CONSTANTS.LORE_LOG_DURATION);
@@ -1027,10 +1065,8 @@ class GameManager {
     }
     
     updateFlashlight(deltaTime) {
-        // Update flashlight system
         this.flashlightSystem.update(this.state.flashlightOn);
         
-        // Drain battery when flashlight is on
         if (this.state.flashlightOn && this.state.battery > 0) {
             const drainAmount = CONSTANTS.BATTERY_DRAIN_RATE * deltaTime;
             this.state.drainBattery(drainAmount);
@@ -1038,7 +1074,6 @@ class GameManager {
     }
     
     updateSanityDrain(deltaTime) {
-        // Drain sanity in darkness (when flashlight is off)
         if (!this.state.flashlightOn) {
             const drainAmount = CONSTANTS.SANITY_DRAIN_DARKNESS * deltaTime;
             this.state.drainSanity(drainAmount);
@@ -1046,10 +1081,8 @@ class GameManager {
     }
     
     updateInteractions() {
-        // Check for interactable objects
         const hasTarget = this.interactionSystem.update();
         
-        // Show/hide interact prompt
         if (hasTarget) {
             this.dom.interactPrompt.classList.remove('hidden');
         } else {
@@ -1064,29 +1097,24 @@ class GameManager {
     }
     
     updateHUD() {
-        // Update health bar
         const healthPercent = (this.state.health / CONSTANTS.PLAYER_HEALTH_MAX) * 100;
         this.dom.healthBar.querySelector('.bar-fill').style.width = healthPercent + '%';
         this.dom.healthValue.textContent = Math.floor(this.state.health);
         
-        // Update sanity bar
         const sanityPercent = (this.state.sanity / CONSTANTS.PLAYER_SANITY_MAX) * 100;
         this.dom.sanityBar.querySelector('.bar-fill').style.width = sanityPercent + '%';
         this.dom.sanityValue.textContent = Math.floor(this.state.sanity);
         
-        // Update inventory
         this.dom.ammoCount.textContent = this.state.ammo;
         this.dom.batteryCount.textContent = Math.floor(this.state.battery) + '%';
         this.dom.flashlightStatus.textContent = this.state.flashlightOn ? 'ON' : 'OFF';
         
-        // Update flashlight status color
         if (this.state.flashlightOn) {
             this.dom.flashlightStatus.style.color = '#ffff00';
         } else {
             this.dom.flashlightStatus.style.color = '#fff';
         }
         
-        // Update dragon info
         if (this.state.dragon) {
             this.dom.dragonInfo.style.display = 'block';
             
@@ -1105,24 +1133,14 @@ class GameManager {
     }
     
     update(deltaTime) {
-        // Update player controller
         if (this.isPointerLocked && this.player) {
             this.player.update(deltaTime, this.levelBuilder.getCollisionGeometry());
         }
         
-        // Update flashlight system
         this.updateFlashlight(deltaTime);
-        
-        // Update sanity drain from darkness
         this.updateSanityDrain(deltaTime);
-        
-        // Update interaction system
         this.updateInteractions();
-        
-        // Update visual effects
         this.updateDamageFlash(deltaTime);
-        
-        // Update HUD
         this.updateHUD();
     }
     
