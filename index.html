@@ -8,6 +8,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
+    <!-- FIX #8: Vignette Element for Low Sanity Effect -->
+    <div id="vignette"></div>
+
     <!-- Start Screen -->
     <div id="startScreen">
         <div class="start-content">
@@ -29,14 +32,14 @@
             <div class="stat-bar">
                 <label>Health</label>
                 <div class="bar" id="healthBar">
-                    <div class="bar-fill" style="width: 100%;"></div>
+                    <div class="bar-fill" id="healthBarFill" style="width: 100%;"></div>
                 </div>
                 <span class="stat-value" id="healthValue">100</span>
             </div>
             <div class="stat-bar">
                 <label>Sanity</label>
                 <div class="bar" id="sanityBar">
-                    <div class="bar-fill" style="width: 100%;"></div>
+                    <div class="bar-fill" id="sanityBarFill" style="width: 100%;"></div>
                 </div>
                 <span class="stat-value" id="sanityValue">100</span>
             </div>
@@ -65,7 +68,7 @@
                 <div class="dragon-trust">
                     <label>Bond</label>
                     <div class="bar" id="dragonTrustBar">
-                        <div class="bar-fill" style="width: 50%;"></div>
+                        <div class="bar-fill" id="dragonTrustBarFill" style="width: 50%;"></div>
                     </div>
                     <span class="trust-label" id="trustLabel">Unstable</span>
                     <span class="trust-value" id="dragonTrustValue">50</span>
@@ -256,7 +259,9 @@
 
             <div class="ending-footer">
                 <p class="ending-thanks">Thank you for playing.</p>
-                <p class="ending-credit">ATC Horror Economics Game - Turn 10 Complete</p>
+                <p class="ending-credit">ATC Horror Economics Game - Complete</p>
+                <!-- FIX #1: Restart Button -->
+                <button id="restartGameBtn" class="restart-btn">RESTART GAME</button>
             </div>
         </div>
     </div>
