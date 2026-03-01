@@ -8,8 +8,23 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
+    <!-- Start Screen -->
+    <div id="startScreen">
+        <div class="start-content">
+            <h1>ASHFALL: THE LAST EMBER</h1>
+            <p class="game-subtitle">An Economics Horror Experience</p>
+            <button id="startGameBtn" class="start-btn">START GAME</button>
+            <div id="tutorialText" class="tutorial-text">
+                <p>WASD: Move | Shift: Sprint | F: Flashlight | E: Interact | Q: Dragon Ability</p>
+            </div>
+            <div id="testKeysInfo" class="test-keys-info">
+                <p>Debug Keys: 1 (Damage) | 2 (Drain Sanity) | 3 (Drain Battery)</p>
+            </div>
+        </div>
+    </div>
+
     <!-- HUD Overlay -->
-    <div id="hud">
+    <div id="hud" class="hidden">
         <div class="hud-top">
             <div class="stat-bar">
                 <label>Health</label>
@@ -30,11 +45,11 @@
             <div class="inventory">
                 <div class="item">
                     <label>Stun Rounds</label>
-                    <span id="ammoCount">2</span>
+                    <span id="ammoValue">2</span>
                 </div>
                 <div class="item">
                     <label>Battery</label>
-                    <span id="batteryCount">100%</span>
+                    <span id="batteryValue">100%</span>
                 </div>
                 <div class="item">
                     <label>Flashlight</label>
@@ -42,7 +57,7 @@
                 </div>
             </div>
             <!-- TURN 9: Enhanced Dragon UI -->
-            <div class="dragon-info" id="dragonInfo" style="display: none;">
+            <div class="dragon-info" id="dragonUI" style="display: none;">
                 <div class="dragon-header">
                     <span class="dragon-icon" id="dragonIcon">🐉</span>
                     <span class="dragon-name" id="dragonName">Dragon</span>
@@ -53,32 +68,30 @@
                         <div class="bar-fill" style="width: 50%;"></div>
                     </div>
                     <span class="trust-label" id="trustLabel">Unstable</span>
+                    <span class="trust-value" id="dragonTrustValue">50</span>
                 </div>
                 <div class="dragon-ability">
                     <label id="abilityLabel">Ability (Q)</label>
-                    <span id="abilityUses">3/3</span>
+                    <span id="abilityUsesValue">3/3</span>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Interaction Prompt -->
-    <div id="interactPrompt" class="hidden">
+    <div id="interactionPrompt" class="hidden">
         Press E to interact
     </div>
 
     <!-- Log Box -->
     <div id="logBox"></div>
 
-    <!-- Pointer Lock Instruction -->
-    <div id="lockInstruction">
-        <p>Click to start</p>
-    </div>
-
-    <!-- Modal Overlay (for puzzles/endings) -->
-    <div id="modalOverlay" class="modal-overlay hidden">
-        <div id="modalContent" class="modal-content">
-            <!-- Dynamic content injected here -->
+    <!-- Lore Modal -->
+    <div id="loreModal" class="lore-modal-overlay hidden">
+        <div class="lore-modal-content">
+            <h3 id="loreTitle">Lore Note</h3>
+            <div id="loreText" class="lore-text"></div>
+            <button id="closeLoreBtn" class="close-lore-btn">Close [E]</button>
         </div>
     </div>
 
