@@ -41,16 +41,21 @@
                     <span id="flashlightStatus">OFF</span>
                 </div>
             </div>
+            <!-- TURN 9: Enhanced Dragon UI -->
             <div class="dragon-info" id="dragonInfo" style="display: none;">
+                <div class="dragon-header">
+                    <span class="dragon-icon" id="dragonIcon">🐉</span>
+                    <span class="dragon-name" id="dragonName">Dragon</span>
+                </div>
                 <div class="dragon-trust">
-                    <label>Dragon Bond</label>
+                    <label>Bond</label>
                     <div class="bar" id="dragonTrustBar">
                         <div class="bar-fill" style="width: 50%;"></div>
                     </div>
                     <span class="trust-label" id="trustLabel">Unstable</span>
                 </div>
                 <div class="dragon-ability">
-                    <label>Ability Uses</label>
+                    <label id="abilityLabel">Ability</label>
                     <span id="abilityUses">3/3</span>
                 </div>
             </div>
@@ -58,7 +63,7 @@
     </div>
 
     <!-- Interaction Prompt -->
-    <div id="interactPrompt" style="display: none;">
+    <div id="interactPrompt" class="hidden">
         Press E to interact
     </div>
 
@@ -71,7 +76,7 @@
     </div>
 
     <!-- Modal Overlay (for puzzles/endings) -->
-    <div id="modalOverlay" class="modal-overlay" style="display: none;">
+    <div id="modalOverlay" class="modal-overlay hidden">
         <div id="modalContent" class="modal-content">
             <!-- Dynamic content injected here -->
         </div>
@@ -104,6 +109,62 @@
                 </div>
                 <div id="choiceFeedback" class="choice-feedback"></div>
                 <button id="continueBtn" class="continue-btn">CONTINUE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TURN 9: Dragon Choice Modal -->
+    <div id="dragonChoiceModal" class="dragon-modal-overlay hidden">
+        <div class="dragon-modal-content">
+            <h2>THE HATCHERY</h2>
+            <p class="dragon-intro">Three corrupted eggs rest before you. Choose wisely — your bond will be permanent.</p>
+
+            <div class="egg-options">
+                <div class="egg-card" data-dragon="ember">
+                    <div class="egg-visual ember-glow">🔥</div>
+                    <h3>Ember Drake</h3>
+                    <p class="egg-desc">Born from forge-fire. Can stun threats with short flame burst.</p>
+                    <div class="ability-detail">
+                        <strong>Ability:</strong> Dragon Stun (Q)<br>
+                        <strong>Effect:</strong> Stuns monster for 2 seconds<br>
+                        <strong>Uses:</strong> 3 total
+                    </div>
+                    <button class="choose-btn" data-dragon="ember">Choose Ember Drake</button>
+                </div>
+
+                <div class="egg-card" data-dragon="mist">
+                    <div class="egg-visual mist-glow">💨</div>
+                    <h3>Mist Wyrm</h3>
+                    <p class="egg-desc">Born from lost memories. Calms fear and steadies the mind.</p>
+                    <div class="ability-detail">
+                        <strong>Ability:</strong> Calm Mind (Q)<br>
+                        <strong>Effect:</strong> Stop sanity drain for 8s + restore 10<br>
+                        <strong>Uses:</strong> 3 total<br>
+                        <em class="special-note">⭐ Required for Reunion ending</em>
+                    </div>
+                    <button class="choose-btn" data-dragon="mist">Choose Mist Wyrm</button>
+                </div>
+
+                <div class="egg-card" data-dragon="volt">
+                    <div class="egg-visual volt-glow">⚡</div>
+                    <h3>Volt Serpent</h3>
+                    <p class="egg-desc">Born from storm-charged scales. Grants bursts of desperate speed.</p>
+                    <div class="ability-detail">
+                        <strong>Ability:</strong> Lightning Sprint (Q)<br>
+                        <strong>Effect:</strong> Speed × 1.8 for 8 seconds<br>
+                        <strong>Uses:</strong> 3 total
+                    </div>
+                    <button class="choose-btn" data-dragon="volt">Choose Volt Serpent</button>
+                </div>
+            </div>
+
+            <div class="confirm-section hidden" id="confirmSection">
+                <h3>Are you sure?</h3>
+                <p id="confirmText">You are about to bond with <strong id="confirmDragonName"></strong>. This choice is permanent.</p>
+                <div class="confirm-buttons">
+                    <button id="confirmYes" class="confirm-btn yes">Yes, Bond Forever</button>
+                    <button id="confirmNo" class="confirm-btn no">Go Back</button>
+                </div>
             </div>
         </div>
     </div>
