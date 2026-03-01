@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 11: POLISH & INTEGRATION COMPLETE
+// ATC HORROR ECONOMICS GAME - ALL FIXES COMPLETE
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -23,7 +23,7 @@ const CONSTANTS = {
     PLAYER_WALK_SPEED: 3.5,
     PLAYER_SPRINT_SPEED: 6.0,
     PLAYER_HEIGHT: 1.6,
-    PLAYER_RADIUS: 0.3,
+    PLAYER_RADIUS: 0.5, // FIX #1: Increased for collision detection
     
     // Physics
     GRAVITY: 9.8,
@@ -68,6 +68,11 @@ const CONSTANTS = {
     INTERACTION_RANGE: 3,
     INTERACTION_RAYCAST_LAYERS: 1,
     
+    // FIX #6: Darkness detection
+    DARKNESS_DETECTION_RANGE: 5, // Check lights within 5 units
+    DARKNESS_THRESHOLD: 0.5,
+    LIGHT_DETECTION_SAMPLE_POINTS: 4,
+    
     // Lore note settings
     LORE_NOTE_GLOW_COLOR: 0xffaa44,
     LORE_NOTE_GLOW_INTENSITY: 2,
@@ -76,7 +81,10 @@ const CONSTANTS = {
     
     // Monster settings
     MONSTER_ROAM_SPEED: 2.0,
+    MONSTER_LURK_SPEED: 1.5, // FIX #3
+    MONSTER_STALK_BURST_SPEED: 5.0, // FIX #3
     MONSTER_CHASE_SPEED: 4.5,
+    MONSTER_RELENTLESS_SPEED: 5.5, // FIX #3
     MONSTER_RETREAT_SPEED: 3.0,
     MONSTER_HEIGHT: 2.0,
     MONSTER_RADIUS: 0.5,
@@ -86,7 +94,10 @@ const CONSTANTS = {
     MONSTER_RETREAT_DURATION: 8,
     MONSTER_PROXIMITY_SANITY_RANGE: 5,
     MONSTER_ROAM_WAYPOINT_DELAY: 3,
-    MONSTER_STUN_RESIST_COOLDOWN: 6, // TURN 11: Stun resist window
+    MONSTER_STUN_RESIST_COOLDOWN: 6,
+    MONSTER_LOS_CHECK_HEIGHT: 1.5, // FIX #4
+    MONSTER_LURK_DURATION: 4, // FIX #3
+    MONSTER_STALK_BURST_DURATION: 2, // FIX #3
     
     // Dragon settings
     DRAGON_FOLLOW_DISTANCE: 2.0,
@@ -99,18 +110,15 @@ const CONSTANTS = {
     DRAGON_ABILITY_VOLT_DURATION: 8000,
     DRAGON_ABILITY_VOLT_MULT: 1.8,
     
-    // TURN 11: Hiding mechanic
+    // Hiding mechanic
     HIDING_INTERACTION_RANGE: 2.5,
-    
-    // Darkness threshold
-    DARKNESS_THRESHOLD: 0.5,
 
     // Audio constants
     AUDIO_MASTER_GAIN: 0.55,
     AUDIO_UI_GAIN: 0.25,
     AUDIO_AMBIENCE_GAIN: 0.18,
     AUDIO_PLAYER_GAIN: 0.22,
-    AUDIO_MONSTER_GAIN: 0.28,
+    MONSTER_GAIN: 0.28,
     AUDIO_DRAGON_GAIN: 0.22,
     AUDIO_HALLUCINATION_GAIN: 0.16,
 
@@ -131,8 +139,8 @@ const UI_TEXT = {
     PRESS_E_EGG: "Press E to choose this dragon",
     PRESS_E_RITUAL: "Press E to begin the ritual",
     PRESS_E_BATTERY: "Press E to collect battery",
-    PRESS_H_HIDE: "Press H to hide", // TURN 11
-    PRESS_H_UNHIDE: "Press H to exit", // TURN 11
+    PRESS_H_HIDE: "Press H to hide",
+    PRESS_H_UNHIDE: "Press H to exit",
     HEALTH_LABEL: "Health",
     SANITY_LABEL: "Sanity",
     AMMO_LABEL: "Stun Rounds",
@@ -142,6 +150,7 @@ const UI_TEXT = {
     ABILITY_USES_LABEL: "Ability Uses",
     TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact. Q to use ability.",
     TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Flashlight, E: Interact, Q: Ability",
+    RESTART_BUTTON: "Restart Game", // FIX #8
 };
 
 // ATC LORE NOTE TEXTS (MANDATORY EDUCATIONAL CONTENT)
@@ -205,7 +214,7 @@ const DRAGON_TYPES = {
     }
 };
 
-// ENDING DATA
+// ENDINGS DATA
 const ENDINGS = {
     ENDING_A: {
         title: "ENDING A: THE TRUE BOND",
@@ -249,6 +258,14 @@ const ROOM_WAYPOINTS = [
     { name: 'Forge', x: 35, z: 0 },
     { name: 'Hatchery', x: 35, z: -15 },
     { name: 'Vault', x: 35, z: -30 }
+];
+
+// FIX #2: Door data for collision checking
+const DOORS = [
+    { name: 'EntranceToLibrary', x: 10, z: 0, width: 2, lockKey: null },
+    { name: 'LibraryToForge', x: 25, z: 0, width: 2, lockKey: null },
+    { name: 'ForgeToHatchery', x: 35, z: -7.5, width: 2, lockKey: 'hatcheryDoor' },
+    { name: 'HatcheryToVault', x: 35, z: -22.5, width: 2, lockKey: 'vaultDoor' }
 ];
 
 // ============================================================================
@@ -610,6 +627,10 @@ class GameState {
         this.battery = CONSTANTS.PLAYER_BATTERY_MAX;
         this.flashlightOn = false;
         
+        // FIX #5: Damage flash
+        this.damageFlashActive = false;
+        this.damageFlashEnd = 0;
+        
         this.dragon = null;
         this.dragonTrust = 50;
         this.dragonAbilityUses = 3;
@@ -619,7 +640,6 @@ class GameState {
         this.speedMultiplier = 1.0;
         this.speedBuffEnd = 0;
         
-        // TURN 11: Hiding state
         this.isHiding = false;
         this.currentHidingSpot = null;
         
@@ -643,7 +663,10 @@ class GameState {
         if (amount < 0) return;
         this.health = Math.max(0, this.health - amount);
         
-        // Trust decrease on damage
+        // FIX #5: Trigger red flash
+        this.damageFlashActive = true;
+        this.damageFlashEnd = Date.now() + 500; // 0.5 second flash
+        
         if (this.dragon) {
             this.updateDragonTrust(-3);
         }
@@ -661,7 +684,6 @@ class GameState {
     drainSanity(amount) {
         if (amount < 0) return;
         
-        // Check if sanity drain is paused (Mist Wyrm ability)
         if (this.sanityDrainPaused && Date.now() < this.sanityDrainPauseEnd) {
             return;
         }
@@ -725,7 +747,6 @@ class GameState {
         this.loreNotesCollected++;
         this.drainSanity(CONSTANTS.SANITY_DRAIN_LORE_NOTE);
         
-        // Trust increase for lore collection
         if (this.dragon) {
             this.updateDragonTrust(2);
         }
@@ -746,7 +767,6 @@ class GameState {
         }
     }
     
-    // TURN 11: Hiding mechanic
     enterHiding(hidingSpot) {
         this.isHiding = true;
         this.currentHidingSpot = hidingSpot;
@@ -797,7 +817,6 @@ class DragonCompanion {
         mesh.castShadow = true;
         mesh.position.copy(this.position);
         
-        // Add glowing eyes
         const eyeGeom = new THREE.SphereGeometry(0.05, 8, 8);
         const eyeMat = new THREE.MeshStandardMaterial({
             color: this.dragonData.emissive,
@@ -830,10 +849,8 @@ class DragonCompanion {
     update(deltaTime, playerController, monsterAI, gameState) {
         if (!this.active) return;
         
-        // Don't update if player is hiding
         if (gameState.isHiding) return;
         
-        // Calculate position 2 units behind player
         const playerPos = playerController.position;
         const cameraDirection = new THREE.Vector3();
         playerController.camera.getWorldDirection(cameraDirection);
@@ -844,12 +861,10 @@ class DragonCompanion {
         this.targetPosition.sub(cameraDirection.multiplyScalar(CONSTANTS.DRAGON_FOLLOW_DISTANCE));
         this.targetPosition.y = playerPos.y - 0.3;
         
-        // Smooth lerp to target
         this.position.lerp(this.targetPosition, deltaTime * 3);
         this.mesh.position.copy(this.position);
         this.lightSource.position.copy(this.position);
         
-        // Scout alert
         if (monsterAI) {
             const distToMonster = this.position.distanceTo(monsterAI.position);
             const currentTime = Date.now();
@@ -861,14 +876,12 @@ class DragonCompanion {
             }
         }
         
-        // Trust adjustments
         this.updateTrust(deltaTime, playerController, gameState);
     }
     
     updateTrust(deltaTime, playerController, gameState) {
         const currentTime = Date.now();
         
-        // Trust decrease: Sprinting for extended period
         if (playerController.isSprinting) {
             if (!gameState.sprintStartTime) {
                 gameState.sprintStartTime = currentTime;
@@ -879,7 +892,6 @@ class DragonCompanion {
             gameState.sprintStartTime = 0;
         }
         
-        // Trust decrease: Low sanity for extended period
         if (gameState.sanity < 20) {
             if (!gameState.lowSanityStartTime) {
                 gameState.lowSanityStartTime = currentTime;
@@ -890,7 +902,6 @@ class DragonCompanion {
             gameState.lowSanityStartTime = 0;
         }
         
-        // Trust increase: Standing still near dragon
         if (!playerController.moveForward && !playerController.moveBackward && 
             !playerController.moveLeft && !playerController.moveRight) {
             const distToDragon = playerController.position.distanceTo(this.position);
@@ -906,7 +917,6 @@ class DragonCompanion {
             return false;
         }
         
-        // Check trust threshold
         if (gameState.dragonTrust < 30 && Math.random() < 0.5) {
             console.log('[DRAGON] Dragon refused! Bond too weak (Fractured trust).');
             return false;
@@ -916,7 +926,6 @@ class DragonCompanion {
 
         if (this.audio) this.audio.dragonAbility(this.type);
         
-        // Execute ability based on type
         let success = false;
         if (this.type === 'EmberDrake') {
             success = this.abilityEmberStun(monsterAI, gameState);
@@ -945,7 +954,6 @@ class DragonCompanion {
         monsterAI.stun();
         console.log('[EMBER] Dragon unleashes flame! Monster stunned for 2 seconds.');
         
-        // Trust increase: Smart use during chase
         if (monsterAI.state === 'CHASE') {
             gameState.updateDragonTrust(5);
         } else {
@@ -962,7 +970,6 @@ class DragonCompanion {
         
         console.log('[MIST] Dragon mist calms your mind... (+10 sanity, no drain for 8s)');
         
-        // Trust increase: Smart use when sanity low
         if (gameState.sanity < 50) {
             gameState.updateDragonTrust(4);
         } else {
@@ -1306,14 +1313,18 @@ class ForgePuzzle {
 }
 
 // ============================================================================
-// MONSTER AI (TURN 11: Stun resist + sanity 0 speed boost)
+// MONSTER AI - FIX #3: Full 6-state FSM with LOS
 // ============================================================================
 class MonsterAI {
     constructor(scene, playerController, audio = null) {
         this.scene = scene;
         this.playerController = playerController;
         this.audio = audio;
+        
+        // FIX #3: Full 6-state FSM
         this.state = 'ROAM';
+        this.stateTimer = 0;
+        
         this.position = new THREE.Vector3(20, CONSTANTS.MONSTER_HEIGHT / 2, 0);
         this.velocity = new THREE.Vector3();
         this.targetWaypoint = null;
@@ -1323,9 +1334,12 @@ class MonsterAI {
 
         this._footstepTimer = 0;
         
-        // TURN 11: Stun resist window
         this.lastStunTime = 0;
         this.stunResistActive = false;
+        
+        // FIX #4: LOS raycaster
+        this.raycaster = new THREE.Raycaster();
+        this.obstacles = []; // Will be populated with walls
         
         this.createMonsterMesh();
     }
@@ -1362,13 +1376,35 @@ class MonsterAI {
         this.scene.add(this.mesh);
     }
     
+    // FIX #3 & #4: Add obstacles for LOS checking
+    setObstacles(obstacles) {
+        this.obstacles = obstacles;
+    }
+    
+    // FIX #4: Line-of-sight check using raycasting
+    hasLineOfSight(targetPos) {
+        const monsterEyePos = this.position.clone();
+        monsterEyePos.y += CONSTANTS.MONSTER_LOS_CHECK_HEIGHT;
+        
+        const direction = new THREE.Vector3();
+        direction.subVectors(targetPos, monsterEyePos);
+        const distance = direction.length();
+        direction.normalize();
+        
+        this.raycaster.set(monsterEyePos, direction);
+        this.raycaster.far = distance;
+        
+        const intersects = this.raycaster.intersectObjects(this.obstacles, false);
+        
+        return intersects.length === 0;
+    }
+    
     update(deltaTime, gameState) {
         if (this.retreatTimer > 0) {
             this.retreatTimer -= deltaTime;
             if (this.retreatTimer <= 0) {
                 this.state = 'ROAM';
                 
-                // TURN 11: Activate stun resist window
                 this.lastStunTime = Date.now();
                 this.stunResistActive = true;
                 
@@ -1376,7 +1412,6 @@ class MonsterAI {
             }
         }
         
-        // TURN 11: Check if stun resist window expired
         if (this.stunResistActive && Date.now() - this.lastStunTime > CONSTANTS.MONSTER_STUN_RESIST_COOLDOWN * 1000) {
             this.stunResistActive = false;
             console.log('Monster: Stun resist window expired');
@@ -1386,12 +1421,24 @@ class MonsterAI {
             this.damageCooldown -= deltaTime;
         }
         
+        this.stateTimer += deltaTime;
+        
+        // FIX #3: Full FSM state machine
         switch(this.state) {
             case 'ROAM':
                 this.updateRoam(deltaTime, gameState);
                 break;
+            case 'LURK':
+                this.updateLurk(deltaTime, gameState);
+                break;
+            case 'STALK_BURST':
+                this.updateStalkBurst(deltaTime, gameState);
+                break;
             case 'CHASE':
                 this.updateChase(deltaTime, gameState);
+                break;
+            case 'RELENTLESS':
+                this.updateRelentless(deltaTime, gameState);
                 break;
             case 'RETREAT':
                 this.updateRetreat(deltaTime);
@@ -1408,19 +1455,19 @@ class MonsterAI {
     updateAudio(deltaTime) {
         if (!this.audio) return;
 
-        if (this.state === 'CHASE') {
+        if (this.state === 'CHASE' || this.state === 'RELENTLESS' || this.state === 'STALK_BURST') {
             this._footstepTimer += deltaTime;
-            if (this._footstepTimer >= 0.38) {
+            const interval = this.state === 'RELENTLESS' ? 0.32 : 0.38;
+            if (this._footstepTimer >= interval) {
                 this._footstepTimer = 0;
                 this.audio.monsterFootstep();
             }
         }
     }
     
+    // FIX #3: ROAM state
     updateRoam(deltaTime, gameState) {
-        // TURN 11: Cannot detect player while hiding
         if (gameState.isHiding) {
-            // Continue roaming
             if (!this.targetWaypoint || this.waypointDelay > 0) {
                 this.waypointDelay -= deltaTime;
                 if (this.waypointDelay <= 0) {
@@ -1429,20 +1476,22 @@ class MonsterAI {
                 return;
             }
             
-            this.moveTowardWaypoint(deltaTime);
+            this.moveTowardWaypoint(deltaTime, CONSTANTS.MONSTER_ROAM_SPEED);
             return;
         }
         
         const detectionRange = this.getDetectionRange(gameState.sanity);
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
+        // FIX #4: Check LOS before transitioning
         if (distanceToPlayer < detectionRange) {
-            this.state = 'CHASE';
-
-            if (this.audio) this.audio.monsterGrowl(0.6);
-
-            console.log('Monster: Player detected, entering Chase state');
-            return;
+            if (this.hasLineOfSight(this.playerController.position)) {
+                this.state = 'LURK';
+                this.stateTimer = 0;
+                if (this.audio) this.audio.monsterGrowl(0.4);
+                console.log('Monster: Player detected with LOS, entering LURK state');
+                return;
+            }
         }
         
         if (!this.targetWaypoint || this.waypointDelay > 0) {
@@ -1453,30 +1502,74 @@ class MonsterAI {
             return;
         }
         
-        this.moveTowardWaypoint(deltaTime);
+        this.moveTowardWaypoint(deltaTime, CONSTANTS.MONSTER_ROAM_SPEED);
     }
     
-    moveTowardWaypoint(deltaTime) {
-        const direction = new THREE.Vector3();
-        direction.subVectors(this.targetWaypoint, this.position);
-        direction.y = 0;
-        
-        const distance = direction.length();
-        if (distance < 1) {
-            this.targetWaypoint = null;
-            this.waypointDelay = CONSTANTS.MONSTER_ROAM_WAYPOINT_DELAY;
+    // FIX #3: LURK state (out-of-sight positioning)
+    updateLurk(deltaTime, gameState) {
+        if (gameState.isHiding) {
+            this.state = 'ROAM';
+            console.log('Monster: Lost track of player (hiding)');
             return;
         }
         
-        direction.normalize();
-        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_ROAM_SPEED);
+        const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
+        // Move slowly toward player while lurking
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.playerController.position, this.position);
+        direction.y = 0;
+        direction.normalize();
+        
+        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_LURK_SPEED);
         this.position.x += this.velocity.x * deltaTime;
         this.position.z += this.velocity.z * deltaTime;
+        
+        // Transition to STALK_BURST after lurk duration
+        if (this.stateTimer > CONSTANTS.MONSTER_LURK_DURATION) {
+            this.state = 'STALK_BURST';
+            this.stateTimer = 0;
+            if (this.audio) this.audio.monsterGrowl(0.7);
+            console.log('Monster: Lurk complete, entering STALK_BURST');
+        }
+        
+        // Lose track if player escapes
+        const detectionRange = this.getDetectionRange(gameState.sanity);
+        if (distanceToPlayer > detectionRange * 2) {
+            this.state = 'ROAM';
+            console.log('Monster: Lost player, returning to Roam');
+        }
+    }
+    
+    // FIX #3: STALK_BURST state (aggressive proximity test)
+    updateStalkBurst(deltaTime, gameState) {
+        if (gameState.isHiding) {
+            this.state = 'ROAM';
+            console.log('Monster: Lost track of player (hiding)');
+            return;
+        }
+        
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.playerController.position, this.position);
+        direction.y = 0;
+        direction.normalize();
+        
+        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_STALK_BURST_SPEED);
+        this.position.x += this.velocity.x * deltaTime;
+        this.position.z += this.velocity.z * deltaTime;
+        
+        this.mesh.lookAt(this.playerController.position);
+        
+        // Transition to CHASE after burst duration
+        if (this.stateTimer > CONSTANTS.MONSTER_STALK_BURST_DURATION) {
+            this.state = 'CHASE';
+            this.stateTimer = 0;
+            if (this.audio) this.audio.monsterRoar();
+            console.log('Monster: Stalk burst complete, entering CHASE');
+        }
     }
     
     updateChase(deltaTime, gameState) {
-        // TURN 11: If player is hiding, lose track
         if (gameState.isHiding) {
             this.state = 'ROAM';
             console.log('Monster: Lost track of player (hiding)');
@@ -1485,6 +1578,13 @@ class MonsterAI {
         
         const detectionRange = this.getDetectionRange(gameState.sanity);
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
+        
+        // FIX #4: Check LOS during chase
+        if (!this.hasLineOfSight(this.playerController.position) && distanceToPlayer > detectionRange) {
+            this.state = 'ROAM';
+            console.log('Monster: Lost LOS and distance, returning to Roam');
+            return;
+        }
         
         if (distanceToPlayer > detectionRange * 1.5) {
             this.state = 'ROAM';
@@ -1497,10 +1597,9 @@ class MonsterAI {
         direction.y = 0;
         direction.normalize();
         
-        // TURN 11: Speed boost when player sanity = 0
         let chaseSpeed = CONSTANTS.MONSTER_CHASE_SPEED;
         if (gameState.sanity === 0) {
-            chaseSpeed *= 1.3; // 30% faster when player sanity is 0
+            chaseSpeed *= 1.3;
         }
         
         this.velocity.copy(direction).multiplyScalar(chaseSpeed);
@@ -1509,6 +1608,47 @@ class MonsterAI {
         this.position.z += this.velocity.z * deltaTime;
         
         this.mesh.lookAt(this.playerController.position);
+        
+        // FIX #3: Rare escalation to RELENTLESS (5% chance per second in chase)
+        if (Math.random() < 0.05 * deltaTime && gameState.sanity < 50) {
+            this.state = 'RELENTLESS';
+            this.stateTimer = 0;
+            if (this.audio) this.audio.monsterRoar();
+            console.log('Monster: ESCALATED to RELENTLESS pursuit!');
+        }
+    }
+    
+    // FIX #3: RELENTLESS state (sustained high-speed pursuit)
+    updateRelentless(deltaTime, gameState) {
+        if (gameState.isHiding) {
+            this.state = 'CHASE';
+            console.log('Monster: Player hiding, de-escalating to CHASE');
+            return;
+        }
+        
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.playerController.position, this.position);
+        direction.y = 0;
+        direction.normalize();
+        
+        let relentlessSpeed = CONSTANTS.MONSTER_RELENTLESS_SPEED;
+        if (gameState.sanity === 0) {
+            relentlessSpeed *= 1.3;
+        }
+        
+        this.velocity.copy(direction).multiplyScalar(relentlessSpeed);
+        
+        this.position.x += this.velocity.x * deltaTime;
+        this.position.z += this.velocity.z * deltaTime;
+        
+        this.mesh.lookAt(this.playerController.position);
+        
+        // Relentless lasts 10 seconds, then de-escalates to CHASE
+        if (this.stateTimer > 10) {
+            this.state = 'CHASE';
+            this.stateTimer = 0;
+            console.log('Monster: Relentless pursuit ended, returning to CHASE');
+        }
     }
     
     updateRetreat(deltaTime) {
@@ -1518,6 +1658,25 @@ class MonsterAI {
         direction.normalize();
         
         this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_RETREAT_SPEED);
+        
+        this.position.x += this.velocity.x * deltaTime;
+        this.position.z += this.velocity.z * deltaTime;
+    }
+    
+    moveTowardWaypoint(deltaTime, speed) {
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.targetWaypoint, this.position);
+        direction.y = 0;
+        
+        const distance = direction.length();
+        if (distance < 1) {
+            this.targetWaypoint = null;
+            this.waypointDelay = CONSTANTS.MONSTER_ROAM_WAYPOINT_DELAY;
+            return;
+        }
+        
+        direction.normalize();
+        this.velocity.copy(direction).multiplyScalar(speed);
         
         this.position.x += this.velocity.x * deltaTime;
         this.position.z += this.velocity.z * deltaTime;
@@ -1535,7 +1694,6 @@ class MonsterAI {
     }
     
     checkPlayerCollision(gameState) {
-        // Cannot damage player while hiding
         if (gameState.isHiding) return;
         
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
@@ -1548,19 +1706,18 @@ class MonsterAI {
     }
     
     drainSanityProximity(deltaTime, gameState) {
-        // Cannot drain sanity when player hiding
         if (gameState.isHiding) return;
         
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
-        if (distanceToPlayer < CONSTANTS.MONSTER_PROXIMITY_SANITY_RANGE && this.state === 'CHASE') {
+        if (distanceToPlayer < CONSTANTS.MONSTER_PROXIMITY_SANITY_RANGE && 
+            (this.state === 'CHASE' || this.state === 'RELENTLESS')) {
             const drainAmount = CONSTANTS.SANITY_DRAIN_MONSTER_NEAR * deltaTime;
             gameState.drainSanity(drainAmount);
         }
     }
     
     stun() {
-        // TURN 11: Check stun resist window
         if (this.stunResistActive) {
             console.log('Monster: Stun RESISTED! (within 6s cooldown window)');
             return false;
@@ -1579,6 +1736,7 @@ class MonsterAI {
     
     forceChase() {
         this.state = 'CHASE';
+        this.stateTimer = 0;
 
         if (this.audio) this.audio.monsterGrowl(0.7);
 
@@ -1619,11 +1777,11 @@ class InteractableObject {
 }
 
 // ============================================================================
-// TURN 11: HIDING SPOT CLASS
+// HIDING SPOT CLASS
 // ============================================================================
 class HidingSpot {
     constructor(type, mesh, position) {
-        this.type = type; // 'LOCKER'
+        this.type = type;
         this.mesh = mesh;
         this.position = position;
         this.occupied = false;
@@ -1643,16 +1801,16 @@ class HidingSpot {
 }
 
 // ============================================================================
-// INTERACTION SYSTEM (TURN 11: Hiding support + battery pickups)
+// INTERACTION SYSTEM
 // ============================================================================
 class InteractionSystem {
     constructor(playerController, gameManager) {
         this.playerController = playerController;
         this.gameManager = gameManager;
         this.interactables = [];
-        this.hidingSpots = []; // TURN 11
+        this.hidingSpots = [];
         this.currentTarget = null;
-        this.currentHidingSpot = null; // TURN 11
+        this.currentHidingSpot = null;
         this.raycaster = new THREE.Raycaster();
         
         this.setupKeyBindings();
@@ -1664,7 +1822,6 @@ class InteractionSystem {
                 this.tryInteract();
             }
             
-            // TURN 11: H key for hiding
             if (e.key === 'h' || e.key === 'H') {
                 this.tryHiding();
             }
@@ -1675,7 +1832,6 @@ class InteractionSystem {
         this.interactables.push(interactable);
     }
     
-    // TURN 11: Add hiding spot
     addHidingSpot(hidingSpot) {
         this.hidingSpots.push(hidingSpot);
     }
@@ -1691,7 +1847,6 @@ class InteractionSystem {
         this.raycaster.set(camera.position, direction);
         this.raycaster.far = CONSTANTS.INTERACTION_RANGE;
         
-        // Check interactables
         const meshes = this.interactables
             .filter(obj => !obj.collected && obj.mesh.visible)
             .map(obj => obj.mesh);
@@ -1709,7 +1864,6 @@ class InteractionSystem {
             }
         }
         
-        // TURN 11: Check hiding spots
         if (!this.gameManager.state.isHiding) {
             for (const spot of this.hidingSpots) {
                 const dist = this.playerController.position.distanceTo(spot.position);
@@ -1726,7 +1880,6 @@ class InteractionSystem {
     updateUI() {
         const prompt = document.getElementById('interactionPrompt');
         
-        // TURN 11: Priority to hiding prompt
         if (this.gameManager.state.isHiding) {
             prompt.textContent = UI_TEXT.PRESS_H_UNHIDE;
             prompt.classList.remove('hidden');
@@ -1759,19 +1912,16 @@ class InteractionSystem {
         }
     }
     
-    // TURN 11: Hiding mechanic
     tryHiding() {
         const state = this.gameManager.state;
         
         if (state.isHiding) {
-            // Exit hiding
             state.exitHiding();
             if (this.gameManager.audio) this.gameManager.audio.uiClick();
             return;
         }
         
         if (this.currentHidingSpot && this.currentHidingSpot.canEnter()) {
-            // Enter hiding
             this.currentHidingSpot.enter();
             state.enterHiding(this.currentHidingSpot);
             if (this.gameManager.audio) this.gameManager.audio.uiClick();
@@ -1849,7 +1999,7 @@ class InteractionSystem {
 }
 
 // ============================================================================
-// PLAYER CONTROLLER
+// PLAYER CONTROLLER - FIX #1: Wall Collision + FIX #2: Door Blocking
 // ============================================================================
 class PlayerController {
     constructor(camera, audio = null) {
@@ -1870,7 +2020,20 @@ class PlayerController {
 
         this._footstepTimer = 0;
         
+        // FIX #1 & #2: Collision data
+        this.walls = [];
+        this.gameState = null; // Will be set by GameManager
+        
         this.setupControls();
+    }
+    
+    // FIX #1 & #2: Set collision geometry
+    setWalls(walls) {
+        this.walls = walls;
+    }
+    
+    setGameState(gameState) {
+        this.gameState = gameState;
     }
     
     setupControls() {
@@ -1917,7 +2080,6 @@ class PlayerController {
     update(deltaTime, gameState) {
         if (!this.isPointerLocked) return;
         
-        // TURN 11: Cannot move while hiding
         if (gameState.isHiding) {
             this.camera.position.copy(this.position);
             this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
@@ -1951,7 +2113,26 @@ class PlayerController {
             }
             
             moveVector.multiplyScalar(speed * deltaTime);
-            this.position.add(moveVector);
+            
+            // FIX #1 & #2: Apply collision checking
+            const newPosition = this.position.clone().add(moveVector);
+            
+            if (!this.checkCollision(newPosition, gameState)) {
+                this.position.copy(newPosition);
+            } else {
+                // Try sliding along walls (X and Z separately)
+                const newPosX = this.position.clone();
+                newPosX.x += moveVector.x;
+                if (!this.checkCollision(newPosX, gameState)) {
+                    this.position.x = newPosX.x;
+                }
+                
+                const newPosZ = this.position.clone();
+                newPosZ.z += moveVector.z;
+                if (!this.checkCollision(newPosZ, gameState)) {
+                    this.position.z = newPosZ.z;
+                }
+            }
 
             this.updateFootstepAudio(deltaTime);
         } else {
@@ -1960,6 +2141,56 @@ class PlayerController {
         
         this.camera.position.copy(this.position);
         this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    }
+    
+    // FIX #1 & #2: Collision detection with walls and doors
+    checkCollision(newPos, gameState) {
+        // Check wall collisions
+        for (const wall of this.walls) {
+            if (this.circleBoxCollision(newPos, CONSTANTS.PLAYER_RADIUS, wall)) {
+                return true;
+            }
+        }
+        
+        // FIX #2: Check door collisions (locked doors block)
+        for (const door of DOORS) {
+            if (door.lockKey) {
+                // Check if door is locked
+                const isLocked = door.lockKey === 'hatcheryDoor' 
+                    ? !gameState.hatcheryDoorUnlocked 
+                    : !gameState.vaultDoorUnlocked;
+                
+                if (isLocked) {
+                    const doorBox = {
+                        minX: door.x - door.width / 2,
+                        maxX: door.x + door.width / 2,
+                        minY: 0,
+                        maxY: CONSTANTS.ROOM_HEIGHT,
+                        minZ: door.z - 0.5,
+                        maxZ: door.z + 0.5
+                    };
+                    
+                    if (this.circleBoxCollision(newPos, CONSTANTS.PLAYER_RADIUS, doorBox)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    // FIX #1: Circle-box collision helper (player capsule vs wall box)
+    circleBoxCollision(circlePos, circleRadius, box) {
+        const closestX = Math.max(box.minX, Math.min(circlePos.x, box.maxX));
+        const closestZ = Math.max(box.minZ, Math.min(circlePos.z, box.maxZ));
+        
+        const distX = circlePos.x - closestX;
+        const distZ = circlePos.z - closestZ;
+        
+        const distanceSquared = distX * distX + distZ * distZ;
+        
+        return distanceSquared < (circleRadius * circleRadius);
     }
 
     updateFootstepAudio(deltaTime) {
@@ -2020,13 +2251,19 @@ class FlashlightSystem {
 }
 
 // ============================================================================
-// LEVEL BUILDER (TURN 11: Hiding spots + battery pickups + visual props)
+// LEVEL BUILDER - FIX #1, #2, #6, #9
 // ============================================================================
 class LevelBuilder {
     constructor(scene, interactionSystem, audio = null) {
         this.scene = scene;
         this.interactionSystem = interactionSystem;
         this.audio = audio;
+        
+        // FIX #1, #2, #4: Wall collision boxes
+        this.walls = [];
+        
+        // FIX #6, #9: Light sources for darkness/sanity restore detection
+        this.lightSources = [];
     }
     
     buildLevel() {
@@ -2036,6 +2273,16 @@ class LevelBuilder {
         this.createHatchery();
         this.createVault();
         this.createLights();
+    }
+    
+    // FIX #1, #2: Return walls for collision
+    getWalls() {
+        return this.walls;
+    }
+    
+    // FIX #6, #9: Return light sources
+    getLightSources() {
+        return this.lightSources;
     }
     
     createEntrance() {
@@ -2050,7 +2297,6 @@ class LevelBuilder {
         
         this.scene.add(doorToLibrary);
         
-        // TURN 11: Battery pickup in Entrance
         this.createBatteryPickup(-3, 0.5, 3);
     }
     
@@ -2076,14 +2322,11 @@ class LevelBuilder {
         
         this.scene.add(doorToForge);
         
-        // TURN 11: Add 2 lockers for hiding
         this.createHidingSpot(offsetX - 5, 0, 4);
         this.createHidingSpot(offsetX - 5, 0, -4);
         
-        // TURN 11: Battery pickup in Library
         this.createBatteryPickup(offsetX + 4, 0.5, 4);
         
-        // TURN 11: Decorative shelves
         this.createShelf(offsetX - 6, 0, 0);
         this.createShelf(offsetX + 6, 0, 0);
     }
@@ -2103,11 +2346,9 @@ class LevelBuilder {
         
         this.createForgeAltar(offsetX, 0);
         
-        // TURN 11: Burnt ledgers on walls
         this.createBurntLedger(offsetX - CONSTANTS.FORGE_WIDTH / 2 + 0.5, 1.5, 0);
         this.createBurntLedger(offsetX + CONSTANTS.FORGE_WIDTH / 2 - 0.5, 1.5, 2);
         
-        // TURN 11: Scribbled equations near altar
         this.createEquationProp(offsetX - 1.5, 0.1, 1.5);
     }
     
@@ -2132,6 +2373,7 @@ class LevelBuilder {
         this.createVaultRitualCircle(offsetX, offsetZ);
     }
     
+    // FIX #1, #2: Create room with wall collision boxes
     createRoom(x, z, width, depth, name) {
         const wallMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x333333, 
@@ -2146,21 +2388,57 @@ class LevelBuilder {
         
         const wallHeight = CONSTANTS.ROOM_HEIGHT;
         
+        // North wall
         const wallNorth = this.createWall(width, wallHeight, CONSTANTS.WALL_THICKNESS);
         wallNorth.position.set(x, wallHeight / 2, z - depth / 2);
         this.scene.add(wallNorth);
+        this.walls.push({
+            minX: x - width / 2,
+            maxX: x + width / 2,
+            minY: 0,
+            maxY: wallHeight,
+            minZ: z - depth / 2 - CONSTANTS.WALL_THICKNESS / 2,
+            maxZ: z - depth / 2 + CONSTANTS.WALL_THICKNESS / 2
+        });
         
+        // South wall
         const wallSouth = this.createWall(width, wallHeight, CONSTANTS.WALL_THICKNESS);
         wallSouth.position.set(x, wallHeight / 2, z + depth / 2);
         this.scene.add(wallSouth);
+        this.walls.push({
+            minX: x - width / 2,
+            maxX: x + width / 2,
+            minY: 0,
+            maxY: wallHeight,
+            minZ: z + depth / 2 - CONSTANTS.WALL_THICKNESS / 2,
+            maxZ: z + depth / 2 + CONSTANTS.WALL_THICKNESS / 2
+        });
         
+        // West wall
         const wallWest = this.createWall(CONSTANTS.WALL_THICKNESS, wallHeight, depth);
         wallWest.position.set(x - width / 2, wallHeight / 2, z);
         this.scene.add(wallWest);
+        this.walls.push({
+            minX: x - width / 2 - CONSTANTS.WALL_THICKNESS / 2,
+            maxX: x - width / 2 + CONSTANTS.WALL_THICKNESS / 2,
+            minY: 0,
+            maxY: wallHeight,
+            minZ: z - depth / 2,
+            maxZ: z + depth / 2
+        });
         
+        // East wall
         const wallEast = this.createWall(CONSTANTS.WALL_THICKNESS, wallHeight, depth);
         wallEast.position.set(x + width / 2, wallHeight / 2, z);
         this.scene.add(wallEast);
+        this.walls.push({
+            minX: x + width / 2 - CONSTANTS.WALL_THICKNESS / 2,
+            maxX: x + width / 2 + CONSTANTS.WALL_THICKNESS / 2,
+            minY: 0,
+            maxY: wallHeight,
+            minZ: z - depth / 2,
+            maxZ: z + depth / 2
+        });
         
         console.log(`Created room: ${name} at (${x}, ${z})`);
     }
@@ -2214,7 +2492,6 @@ class LevelBuilder {
         console.log(`Lore note placed: ${noteData.title}`);
     }
     
-    // TURN 11: Battery pickup
     createBatteryPickup(x, y, z) {
         const geometry = new THREE.CylinderGeometry(0.2, 0.2, 0.4, 8);
         const material = new THREE.MeshStandardMaterial({
@@ -2235,7 +2512,6 @@ class LevelBuilder {
         console.log(`Battery pickup placed at (${x}, ${y}, ${z})`);
     }
     
-    // TURN 11: Hiding spot (locker)
     createHidingSpot(x, y, z) {
         const geometry = new THREE.BoxGeometry(1, 2, 0.8);
         const material = new THREE.MeshStandardMaterial({
@@ -2256,7 +2532,6 @@ class LevelBuilder {
         console.log(`Hiding spot (locker) placed at (${x}, ${y}, ${z})`);
     }
     
-    // TURN 11: Decorative shelf
     createShelf(x, y, z) {
         const geometry = new THREE.BoxGeometry(0.3, 2, 3);
         const material = new THREE.MeshStandardMaterial({
@@ -2272,7 +2547,6 @@ class LevelBuilder {
         this.scene.add(shelf);
     }
     
-    // TURN 11: Burnt ledger prop
     createBurntLedger(x, y, z) {
         const geometry = new THREE.PlaneGeometry(0.4, 0.6);
         const material = new THREE.MeshStandardMaterial({
@@ -2290,7 +2564,6 @@ class LevelBuilder {
         this.scene.add(ledger);
     }
     
-    // TURN 11: Scribbled equation prop
     createEquationProp(x, y, z) {
         const geometry = new THREE.PlaneGeometry(0.8, 0.4);
         const material = new THREE.MeshStandardMaterial({
@@ -2376,6 +2649,7 @@ class LevelBuilder {
         console.log('Vault ritual circle created');
     }
     
+    // FIX #6, #9: Create lights and track positions
     createLights() {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
         this.scene.add(ambientLight);
@@ -2393,12 +2667,19 @@ class LevelBuilder {
             pointLight.position.set(center.x, 3, center.z);
             pointLight.castShadow = true;
             this.scene.add(pointLight);
+            
+            // FIX #6, #9: Track light sources
+            this.lightSources.push({
+                position: new THREE.Vector3(center.x, 3, center.z),
+                intensity: 0.4,
+                distance: 15
+            });
         });
     }
 }
 
 // ============================================================================
-// GAME MANAGER (TURN 11: Sanity visual effects)
+// GAME MANAGER - ALL FIXES INTEGRATED
 // ============================================================================
 class GameManager {
     constructor() {
@@ -2485,10 +2766,31 @@ class GameManager {
     setupLevel() {
         this.levelBuilder = new LevelBuilder(this.scene, this.interactionSystem, this.audio);
         this.levelBuilder.buildLevel();
+        
+        // FIX #1, #2: Set walls for collision detection
+        this.player.setWalls(this.levelBuilder.getWalls());
+        this.player.setGameState(this.state);
     }
     
     setupMonster() {
         this.monsterAI = new MonsterAI(this.scene, this.player, this.audio);
+        
+        // FIX #4: Set obstacles for LOS
+        this.monsterAI.setObstacles(this.levelBuilder.getWalls().map(wallBox => {
+            const geometry = new THREE.BoxGeometry(
+                wallBox.maxX - wallBox.minX,
+                wallBox.maxY - wallBox.minY,
+                wallBox.maxZ - wallBox.minZ
+            );
+            const material = new THREE.MeshBasicMaterial({ visible: false });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(
+                (wallBox.minX + wallBox.maxX) / 2,
+                (wallBox.minY + wallBox.maxY) / 2,
+                (wallBox.minZ + wallBox.maxZ) / 2
+            );
+            return mesh;
+        }));
     }
     
     setupModals() {
@@ -2497,6 +2799,7 @@ class GameManager {
         this.vaultRitualModal = new VaultRitualModal(this);
     }
     
+    // FIX #8: Add restart button
     setupUI() {
         this.updateUI();
         
@@ -2505,6 +2808,15 @@ class GameManager {
         
         const testKeysInfo = document.getElementById('testKeysInfo');
         testKeysInfo.textContent = UI_TEXT.TEST_KEYS_INFO;
+        
+        // FIX #8: Setup restart button
+        const restartBtn = document.getElementById('restartGameBtn');
+        if (restartBtn) {
+            restartBtn.textContent = UI_TEXT.RESTART_BUTTON;
+            restartBtn.addEventListener('click', () => {
+                location.reload();
+            });
+        }
     }
     
     setupInputHandlers() {
@@ -2556,7 +2868,6 @@ class GameManager {
             
             startScreen.classList.add('hidden');
             
-            // Show HUD
             const hud = document.getElementById('hud');
             hud.classList.remove('hidden');
             
@@ -2587,6 +2898,9 @@ class GameManager {
         
         this.player.update(deltaTime, this.state);
         
+        // FIX #6, #7, #9: Darkness detection and sanity restore
+        this.updateDarknessAndSanity(deltaTime);
+        
         if (this.state.flashlightOn) {
             this.state.drainBattery(CONSTANTS.BATTERY_DRAIN_RATE * deltaTime);
             this.flashlight.update(this.state.battery);
@@ -2613,19 +2927,63 @@ class GameManager {
             + (1.0 - this.state.sanity / CONSTANTS.PLAYER_SANITY_MAX) * 0.5;
         this.audio.playerBreathingIntensity(breathingIntensity);
         
-        // TURN 11: Sanity visual effects
         this.updateSanityVisuals();
+        
+        // FIX #5: Update damage flash
+        this.updateDamageFlash();
         
         this.updateUI();
         this.renderer.render(this.scene, this.camera);
     }
     
-    // TURN 11: Visual effects based on sanity
+    // FIX #6, #7, #9: Darkness detection + sanity restore zones
+    updateDarknessAndSanity(deltaTime) {
+        const playerPos = this.player.position;
+        const lightSources = this.levelBuilder.getLightSources();
+        
+        // FIX #6: Check if player is in darkness (not near any light source)
+        let inDarkness = true;
+        let nearLight = false;
+        
+        // Check flashlight
+        if (this.state.flashlightOn && this.state.battery > 0) {
+            inDarkness = false;
+        }
+        
+        // FIX #7: Check dragon light
+        if (this.state.dragon) {
+            const distToDragon = playerPos.distanceTo(this.state.dragon.position);
+            if (distToDragon < CONSTANTS.DRAGON_LIGHT_DISTANCE) {
+                inDarkness = false;
+                nearLight = true;
+            }
+        }
+        
+        // Check room lights
+        for (const light of lightSources) {
+            const distToLight = playerPos.distanceTo(light.position);
+            if (distToLight < light.distance) {
+                inDarkness = false;
+                nearLight = true;
+                break;
+            }
+        }
+        
+        // Apply darkness sanity drain
+        if (inDarkness) {
+            this.state.drainSanity(CONSTANTS.SANITY_DRAIN_DARKNESS * deltaTime);
+        }
+        
+        // FIX #9: Apply sanity restore near lights
+        if (nearLight && !inDarkness) {
+            this.state.restoreSanity(CONSTANTS.SANITY_RESTORE_LIGHT * deltaTime);
+        }
+    }
+    
     updateSanityVisuals() {
         const body = document.body;
         
         if (this.state.sanity === 0) {
-            // UI glitch effect
             if (!body.classList.contains('ui-glitch')) {
                 body.classList.add('ui-glitch');
             }
@@ -2633,9 +2991,22 @@ class GameManager {
             body.classList.remove('ui-glitch');
         }
         
-        // Vignette intensity based on sanity
         const vignetteIntensity = 1.0 - (this.state.sanity / CONSTANTS.PLAYER_SANITY_MAX);
         body.style.setProperty('--vignette-intensity', vignetteIntensity);
+    }
+    
+    // FIX #5: Update damage flash effect
+    updateDamageFlash() {
+        const body = document.body;
+        
+        if (this.state.damageFlashActive && Date.now() < this.state.damageFlashEnd) {
+            if (!body.classList.contains('damage-flash')) {
+                body.classList.add('damage-flash');
+            }
+        } else {
+            body.classList.remove('damage-flash');
+            this.state.damageFlashActive = false;
+        }
     }
     
     updateUI() {
