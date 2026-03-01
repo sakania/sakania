@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 3: PLAYER STATS SYSTEM
+// ATC HORROR ECONOMICS GAME - TURN 4: FLASHLIGHT + SANITY DRAIN
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -34,7 +34,7 @@ const CONSTANTS = {
     ROOM_DEPTH: 12,
     WALL_THICKNESS: 0.3,
     
-    // Stat change amounts (for testing and game use)
+    // Stat change amounts
     DAMAGE_MONSTER_CONTACT: 20,
     DAMAGE_TEST_AMOUNT: 10,
     SANITY_DRAIN_DARKNESS: 2,
@@ -46,6 +46,17 @@ const CONSTANTS = {
     BATTERY_DRAIN_RATE: 5,
     BATTERY_RESTORE_PICKUP: 50,
     BATTERY_TEST_AMOUNT: 10,
+    
+    // Flashlight settings
+    FLASHLIGHT_INTENSITY: 1.5,
+    FLASHLIGHT_DISTANCE: 15,
+    FLASHLIGHT_ANGLE: Math.PI / 6,
+    FLASHLIGHT_PENUMBRA: 0.3,
+    FLASHLIGHT_DECAY: 2,
+    FLASHLIGHT_COLOR: 0xffffcc,
+    
+    // Darkness threshold (ambient light level below which sanity drains)
+    DARKNESS_THRESHOLD: 0.5,
 };
 
 // UI TEXT CONSTANTS (for easy translation)
@@ -60,7 +71,7 @@ const UI_TEXT = {
     DRAGON_BOND_LABEL: "Dragon Bond",
     ABILITY_USES_LABEL: "Ability Uses",
     TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact.",
-    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery",
+    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Toggle Flashlight",
 };
 
 // ============================================================================
@@ -81,7 +92,7 @@ class GameState {
         this.dragonAbilityUses = 3;
         
         // Game phase
-        this.phase = 'ENTRANCE'; // ENTRANCE, LIBRARY, FORGE, HATCHERY, VAULT, ENDED
+        this.phase = 'ENTRANCE';
         
         // Progress flags
         this.loreNotesCollected = 0;
@@ -104,10 +115,8 @@ class GameState {
         
         this.health = Math.max(0, this.health - amount);
         
-        // Check if player died
         if (this.health === 0) {
             console.log('Player health reached 0');
-            // Death logic will be added in later turns
         }
     }
     
@@ -132,7 +141,6 @@ class GameState {
         // Check sanity thresholds
         if (oldSanity > 60 && this.sanity <= 60) {
             console.log('Sanity threshold: Minor hallucinations enabled (≤60)');
-            // Hallucination logic will be added in later turns
         }
         
         if (oldSanity > 30 && this.sanity <= 30) {
@@ -141,7 +149,6 @@ class GameState {
         
         if (this.sanity === 0) {
             console.log('Sanity reached 0: UI glitch + monster boost');
-            // Zero sanity effects will be added in later turns
         }
     }
     
@@ -231,6 +238,18 @@ class GameState {
         } else if (oldTrust >= 70 && this.dragonTrust < 70) {
             console.log('Dragon trust: Dropped below Loyal threshold');
         }
+    }
+    
+    toggleFlashlight() {
+        // Cannot toggle if battery is 0
+        if (this.battery === 0) {
+            console.log('Cannot toggle flashlight - battery empty');
+            return false;
+        }
+        
+        this.flashlightOn = !this.flashlightOn;
+        console.log(`Flashlight: ${this.flashlightOn ? 'ON' : 'OFF'}`);
+        return true;
     }
 }
 
@@ -361,7 +380,6 @@ class PlayerController {
     }
     
     checkCollision(position, collisionGeometry) {
-        // Simple AABB collision check against room bounds and walls
         for (let wall of collisionGeometry) {
             if (this.intersectsAABB(position, wall)) {
                 return true;
@@ -391,6 +409,60 @@ class PlayerController {
         return (playerMinX < wallMaxX && playerMaxX > wallMinX &&
                 playerMinY < wallMaxY && playerMaxY > wallMinY &&
                 playerMinZ < wallMaxZ && playerMaxZ > wallMinZ);
+    }
+}
+
+// ============================================================================
+// FLASHLIGHT SYSTEM
+// ============================================================================
+class FlashlightSystem {
+    constructor(scene, camera) {
+        this.scene = scene;
+        this.camera = camera;
+        
+        // Create flashlight spotlight
+        this.light = new THREE.SpotLight(
+            CONSTANTS.FLASHLIGHT_COLOR,
+            CONSTANTS.FLASHLIGHT_INTENSITY,
+            CONSTANTS.FLASHLIGHT_DISTANCE,
+            CONSTANTS.FLASHLIGHT_ANGLE,
+            CONSTANTS.FLASHLIGHT_PENUMBRA,
+            CONSTANTS.FLASHLIGHT_DECAY
+        );
+        
+        this.light.castShadow = true;
+        this.light.shadow.mapSize.width = 1024;
+        this.light.shadow.mapSize.height = 1024;
+        this.light.shadow.camera.near = 0.5;
+        this.light.shadow.camera.far = CONSTANTS.FLASHLIGHT_DISTANCE;
+        
+        // Position light at camera
+        this.light.position.copy(camera.position);
+        
+        // Create target for spotlight direction
+        this.target = new THREE.Object3D();
+        this.scene.add(this.target);
+        this.light.target = this.target;
+        
+        // Initially off
+        this.light.visible = false;
+        
+        this.scene.add(this.light);
+    }
+    
+    update(isOn) {
+        // Update visibility
+        this.light.visible = isOn;
+        
+        if (isOn) {
+            // Update light position to camera
+            this.light.position.copy(this.camera.position);
+            
+            // Update target position (point in camera direction)
+            const direction = new THREE.Vector3();
+            this.camera.getWorldDirection(direction);
+            this.target.position.copy(this.camera.position).add(direction);
+        }
     }
 }
 
@@ -435,7 +507,6 @@ class LevelBuilder {
         floor.receiveShadow = true;
         this.scene.add(floor);
         
-        // Collision data for floor
         this.collisionGeometry.push({
             position: floor.position.clone(),
             size: new THREE.Vector3(roomWidth, wallThickness, roomDepth)
@@ -448,7 +519,7 @@ class LevelBuilder {
         ceiling.receiveShadow = true;
         this.scene.add(ceiling);
         
-        // North wall (positive Z)
+        // North wall
         const northWallGeometry = new THREE.BoxGeometry(roomWidth, roomHeight, wallThickness);
         const northWall = new THREE.Mesh(northWallGeometry, wallMaterial);
         northWall.position.set(0, roomHeight / 2, roomDepth / 2);
@@ -461,7 +532,7 @@ class LevelBuilder {
             size: new THREE.Vector3(roomWidth, roomHeight, wallThickness)
         });
         
-        // South wall (negative Z)
+        // South wall
         const southWallGeometry = new THREE.BoxGeometry(roomWidth, roomHeight, wallThickness);
         const southWall = new THREE.Mesh(southWallGeometry, wallMaterial);
         southWall.position.set(0, roomHeight / 2, -roomDepth / 2);
@@ -474,7 +545,7 @@ class LevelBuilder {
             size: new THREE.Vector3(roomWidth, roomHeight, wallThickness)
         });
         
-        // East wall (positive X)
+        // East wall
         const eastWallGeometry = new THREE.BoxGeometry(wallThickness, roomHeight, roomDepth);
         const eastWall = new THREE.Mesh(eastWallGeometry, wallMaterial);
         eastWall.position.set(roomWidth / 2, roomHeight / 2, 0);
@@ -487,7 +558,7 @@ class LevelBuilder {
             size: new THREE.Vector3(wallThickness, roomHeight, roomDepth)
         });
         
-        // West wall (negative X)
+        // West wall
         const westWallGeometry = new THREE.BoxGeometry(wallThickness, roomHeight, roomDepth);
         const westWall = new THREE.Mesh(westWallGeometry, wallMaterial);
         westWall.position.set(-roomWidth / 2, roomHeight / 2, 0);
@@ -500,7 +571,6 @@ class LevelBuilder {
             size: new THREE.Vector3(wallThickness, roomHeight, roomDepth)
         });
         
-        // Add some visual props (table in center)
         this.addTestProps();
     }
     
@@ -552,6 +622,7 @@ class GameManager {
         this.renderer = null;
         this.player = null;
         this.levelBuilder = null;
+        this.flashlightSystem = null;
         this.clock = new THREE.Clock();
         
         // Pointer lock state
@@ -587,7 +658,9 @@ class GameManager {
         this.setupThreeJS();
         this.setupLevel();
         this.setupPlayer();
+        this.setupFlashlight();
         this.setupPointerLock();
+        this.setupGameKeys();
         this.setupTestKeys();
         this.showTestInfo();
         this.animate();
@@ -615,11 +688,11 @@ class GameManager {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
         
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        // Lighting (dim ambient - darkness causes sanity drain)
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
         this.scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
         directionalLight.position.set(5, 10, 5);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -15;
@@ -643,15 +716,17 @@ class GameManager {
         this.player = new PlayerController(this.camera);
     }
     
+    setupFlashlight() {
+        this.flashlightSystem = new FlashlightSystem(this.scene, this.camera);
+    }
+    
     setupPointerLock() {
         const canvas = this.renderer.domElement;
         
-        // Request pointer lock on click
         this.dom.lockInstruction.addEventListener('click', () => {
             canvas.requestPointerLock();
         });
         
-        // Pointer lock change events
         document.addEventListener('pointerlockchange', () => {
             this.isPointerLocked = document.pointerLockElement === canvas;
             if (this.isPointerLocked) {
@@ -665,7 +740,6 @@ class GameManager {
             console.error('Pointer lock error');
         });
         
-        // Mouse move handler for camera rotation
         document.addEventListener('mousemove', (event) => {
             if (!this.isPointerLocked) return;
             
@@ -680,39 +754,46 @@ class GameManager {
         });
     }
     
+    setupGameKeys() {
+        document.addEventListener('keydown', (event) => {
+            if (!this.isPointerLocked) return;
+            
+            switch(event.code) {
+                case 'KeyF':
+                    // Toggle flashlight
+                    this.state.toggleFlashlight();
+                    break;
+            }
+        });
+    }
+    
     setupTestKeys() {
         document.addEventListener('keydown', (event) => {
-            // Test keys only work when pointer is locked
             if (!this.isPointerLocked) return;
             
             switch(event.code) {
                 case 'Digit1':
-                    // Test damage
                     this.state.takeDamage(CONSTANTS.DAMAGE_TEST_AMOUNT);
                     this.triggerDamageFlash();
                     console.log(`[TEST] Took ${CONSTANTS.DAMAGE_TEST_AMOUNT} damage. Health: ${this.state.health}`);
                     break;
                     
                 case 'Digit2':
-                    // Test sanity drain
                     this.state.drainSanity(CONSTANTS.SANITY_TEST_AMOUNT);
                     console.log(`[TEST] Lost ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
                     break;
                     
                 case 'Digit3':
-                    // Test sanity restore
                     this.state.restoreSanity(CONSTANTS.SANITY_TEST_AMOUNT);
                     console.log(`[TEST] Restored ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
                     break;
                     
                 case 'Digit4':
-                    // Test battery drain
                     this.state.drainBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
                     console.log(`[TEST] Drained ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
                     break;
                     
                 case 'Digit5':
-                    // Test battery restore
                     this.state.restoreBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
                     console.log(`[TEST] Restored ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
                     break;
@@ -721,12 +802,10 @@ class GameManager {
     }
     
     showTestInfo() {
-        // Display test keys info in console
         console.log('%c' + UI_TEXT.TEST_KEYS_INFO, 'color: #ffaa44; font-weight: bold; font-size: 14px;');
     }
     
     triggerDamageFlash() {
-        // Set damage flash to full opacity, will fade out in update
         this.damageFlashAlpha = 1.0;
     }
     
@@ -734,7 +813,6 @@ class GameManager {
         if (this.damageFlashAlpha > 0) {
             this.damageFlashAlpha = Math.max(0, this.damageFlashAlpha - deltaTime * 2);
             
-            // Apply red overlay to renderer
             if (this.damageFlashAlpha > 0) {
                 const canvas = this.renderer.domElement;
                 canvas.style.boxShadow = `inset 0 0 100px rgba(255, 0, 0, ${this.damageFlashAlpha})`;
@@ -742,6 +820,26 @@ class GameManager {
                 const canvas = this.renderer.domElement;
                 canvas.style.boxShadow = 'none';
             }
+        }
+    }
+    
+    updateFlashlight(deltaTime) {
+        // Update flashlight system
+        this.flashlightSystem.update(this.state.flashlightOn);
+        
+        // Drain battery when flashlight is on
+        if (this.state.flashlightOn && this.state.battery > 0) {
+            const drainAmount = CONSTANTS.BATTERY_DRAIN_RATE * deltaTime;
+            this.state.drainBattery(drainAmount);
+        }
+    }
+    
+    updateSanityDrain(deltaTime) {
+        // Drain sanity in darkness (when flashlight is off)
+        // Note: Dragon light will also prevent drain in later turns
+        if (!this.state.flashlightOn) {
+            const drainAmount = CONSTANTS.SANITY_DRAIN_DARKNESS * deltaTime;
+            this.state.drainSanity(drainAmount);
         }
     }
     
@@ -767,14 +865,20 @@ class GameManager {
         this.dom.batteryCount.textContent = Math.floor(this.state.battery) + '%';
         this.dom.flashlightStatus.textContent = this.state.flashlightOn ? 'ON' : 'OFF';
         
-        // Update dragon info (only visible when dragon exists)
+        // Update flashlight status color
+        if (this.state.flashlightOn) {
+            this.dom.flashlightStatus.style.color = '#ffff00';
+        } else {
+            this.dom.flashlightStatus.style.color = '#fff';
+        }
+        
+        // Update dragon info
         if (this.state.dragon) {
             this.dom.dragonInfo.style.display = 'block';
             
             const trustPercent = this.state.dragonTrust;
             this.dom.dragonTrustBar.querySelector('.bar-fill').style.width = trustPercent + '%';
             
-            // Trust label
             let trustLabel = 'Fractured';
             if (trustPercent >= 70) trustLabel = 'Loyal';
             else if (trustPercent >= 30) trustLabel = 'Unstable';
@@ -791,6 +895,12 @@ class GameManager {
         if (this.isPointerLocked && this.player) {
             this.player.update(deltaTime, this.levelBuilder.getCollisionGeometry());
         }
+        
+        // Update flashlight system
+        this.updateFlashlight(deltaTime);
+        
+        // Update sanity drain from darkness
+        this.updateSanityDrain(deltaTime);
         
         // Update visual effects
         this.updateDamageFlash(deltaTime);
