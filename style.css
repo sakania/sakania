@@ -1017,3 +1017,49 @@ body.glitch {
     50% { filter: hue-rotate(24deg) contrast(1.3); transform: translate(1px,-1px); }
     100% { filter: hue-rotate(-24deg) contrast(0.9); transform: translate(-1px,1px); }
 }
+
+/* TURN 11: Low Sanity Vignette Effect */
+#vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+    transition: opacity 0.5s ease;
+    opacity: 0;
+    background: radial-gradient(
+        circle at center,
+        transparent 30%,
+        rgba(0, 0, 0, 0.4) 70%,
+        rgba(0, 0, 0, 0.8) 100%
+    );
+}
+
+#vignette.active {
+    opacity: 1;
+}
+
+/* UI Glitch Animation (distinct from body glitch) */
+#hud.ui-glitch {
+    animation: ui-glitch 0.3s steps(3) infinite;
+}
+
+@keyframes ui-glitch {
+    0% { 
+        filter: none; 
+        transform: translate(0,0); 
+    }
+    33% { 
+        filter: hue-rotate(90deg) saturate(2); 
+        transform: translate(-2px, 1px); 
+        opacity: 0.9;
+    }
+    66% { 
+        filter: hue-rotate(-90deg) saturate(0.5); 
+        transform: translate(2px, -1px); 
+        opacity: 0.95;
+    }
+    100% { 
+        filter: none; 
+        transform: translate(0,0); 
+    }
+}
