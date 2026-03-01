@@ -2,83 +2,270 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D Horror Survival Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashfall: The Last Ember</title>
+    <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <style>
-        body { margin: 0; }
-        canvas { display: block; }
-    </style>
 </head>
 <body>
-    <script>
-        // Set up scene, camera, and renderer
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+    <!-- FIX #8: Vignette Element for Low Sanity Effect -->
+    <div id="vignette"></div>
 
-        // Procedural Dungeon Generation
-        function generateDungeon() {
-            // TODO: Implement procedural generation logic
-        }
+    <!-- Start Screen -->
+    <div id="startScreen">
+        <div class="start-content">
+            <h1>ASHFALL: THE LAST EMBER</h1>
+            <p class="game-subtitle">An Economics Horror Experience</p>
+            <button id="startGameBtn" class="start-btn">START GAME</button>
+            <div id="tutorialText" class="tutorial-text">
+                <p>WASD: Move | Shift: Sprint | F: Flashlight | E: Interact | Q: Dragon Ability</p>
+            </div>
+            <div id="testKeysInfo" class="test-keys-info">
+                <p>Debug Keys: 1 (Damage) | 2 (Drain Sanity) | 3 (Drain Battery)</p>
+            </div>
+        </div>
+    </div>
 
-        // Enemy AI
-        function setupEnemyAI() {
-            // TODO: Implement enemy AI logic
-        }
+    <!-- HUD Overlay -->
+    <div id="hud" class="hidden">
+        <div class="hud-top">
+            <div class="stat-bar">
+                <label>Health</label>
+                <div class="bar" id="healthBar">
+                    <div class="bar-fill" id="healthBarFill" style="width: 100%;"></div>
+                </div>
+                <span class="stat-value" id="healthValue">100</span>
+            </div>
+            <div class="stat-bar">
+                <label>Sanity</label>
+                <div class="bar" id="sanityBar">
+                    <div class="bar-fill" id="sanityBarFill" style="width: 100%;"></div>
+                </div>
+                <span class="stat-value" id="sanityValue">100</span>
+            </div>
+        </div>
+        <div class="hud-bottom">
+            <div class="inventory">
+                <div class="item">
+                    <label>Stun Rounds</label>
+                    <span id="ammoValue">2</span>
+                </div>
+                <div class="item">
+                    <label>Battery</label>
+                    <span id="batteryValue">100%</span>
+                </div>
+                <div class="item">
+                    <label>Flashlight</label>
+                    <span id="flashlightStatus">OFF</span>
+                </div>
+            </div>
+            <!-- TURN 9: Enhanced Dragon UI -->
+            <div class="dragon-info" id="dragonUI" style="display: none;">
+                <div class="dragon-header">
+                    <span class="dragon-icon" id="dragonIcon">🐉</span>
+                    <span class="dragon-name" id="dragonName">Dragon</span>
+                </div>
+                <div class="dragon-trust">
+                    <label>Bond</label>
+                    <div class="bar" id="dragonTrustBar">
+                        <div class="bar-fill" id="dragonTrustBarFill" style="width: 50%;"></div>
+                    </div>
+                    <span class="trust-label" id="trustLabel">Unstable</span>
+                    <span class="trust-value" id="dragonTrustValue">50</span>
+                </div>
+                <div class="dragon-ability">
+                    <label id="abilityLabel">Ability (Q)</label>
+                    <span id="abilityUsesValue">3/3</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        // Dragon Companion
-        function addDragonCompanion() {
-            // TODO: Implement dragon companion logic
-        }
+    <!-- Interaction Prompt -->
+    <div id="interactionPrompt" class="hidden">
+        Press E to interact
+    </div>
 
-        // Sound Management
-        function setupSound() {
-            // TODO: Implement Web Audio for horror sounds
-        }
+    <!-- Log Box -->
+    <div id="logBox"></div>
 
-        // Dynamic Lighting
-        function setupLighting() {
-            const light = new THREE.DirectionalLight(0xffffff, 1);
-            light.position.set(5, 10, 7.5);
-            scene.add(light);
-        }
+    <!-- Lore Modal -->
+    <div id="loreModal" class="lore-modal-overlay hidden">
+        <div class="lore-modal-content">
+            <h3 id="loreTitle">Lore Note</h3>
+            <div id="loreText" class="lore-text"></div>
+            <button id="closeLoreBtn" class="close-lore-btn">Close [E]</button>
+        </div>
+    </div>
 
-        // Puzzle Solving
-        function setupPuzzles() {
-            // TODO: Implement puzzle solving mechanics
-        }
+    <!-- TURN 8: Forge ATC Puzzle Modal -->
+    <div id="forgeModal" class="forge-modal-overlay hidden">
+        <div class="forge-modal-content">
+            <h2>FORGE TERMINAL ACTIVE</h2>
+            <p class="forge-intro">The Forge awaits your answer. Remember: ATC includes BOTH the rent-ghost ($2700) and the materials-demon ($300). Divide by quantity (100 units).</p>
 
-        // Multiple Endings
-        function setupEndings() {
-            // TODO: Implement multiple ending logic
-        }
+            <div class="quiz-question" id="quizQuestion">
+                <p><strong>When it produces 100 units, a firm's total variable cost is $300 and its total fixed cost is $2700. What is the average total cost?</strong></p>
+                <div class="quiz-options">
+                    <button class="option-btn" data-answer="a">a) $30</button>
+                    <button class="option-btn" data-answer="b">b) $3</button>
+                    <button class="option-btn" data-answer="c">c) $24</button>
+                    <button class="option-btn" data-answer="d">d) $27</button>
+                </div>
+            </div>
 
-        // Initialize game
-        function init() {
-            generateDungeon();
-            setupEnemyAI();
-            addDragonCompanion();
-            setupSound();
-            setupLighting();
-            setupPuzzles();
-            setupEndings();
+            <div class="math-reveal hidden" id="mathReveal">
+                <h3>🧮 MATH REVEAL</h3>
+                <div class="calculation">
+                    <p>Total Cost = TFC + TVC</p>
+                    <p>Total Cost = $2700 + $300 = $3000</p>
+                    <p>Average Total Cost = Total Cost ÷ Quantity</p>
+                    <p><strong>ATC = $3000 ÷ 100 = $30</strong></p>
+                    <p><em>Correct answer: a) $30</em></p>
+                </div>
+                <div id="choiceFeedback" class="choice-feedback"></div>
+                <button id="continueBtn" class="continue-btn">CONTINUE</button>
+            </div>
+        </div>
+    </div>
 
-            camera.position.z = 5;
-            animate();
-        }
+    <!-- TURN 9: Dragon Choice Modal (Egg Selection) -->
+    <div id="dragonChoiceModal" class="dragon-modal-overlay hidden">
+        <div class="dragon-modal-content">
+            <h2>THE HATCHERY</h2>
+            <p class="dragon-intro">Three corrupted eggs rest before you. Each holds a fragment of what was lost. Choose wisely — your bond will be permanent.</p>
 
-        // Animation loop
-        function animate() {
-            requestAnimationFrame(animate);
-            // Update game state
-            renderer.render(scene, camera);
-        }
+            <div class="egg-grid">
+                <!-- Ember Drake Card -->
+                <div class="dragon-egg-card" data-dragon-type="EmberDrake">
+                    <div class="egg-visual ember-glow">🔥</div>
+                    <h3>Ember Drake</h3>
+                    <p class="egg-desc">Born from forge-fire. Can stun threats with short flame burst. Aggressive and protective.</p>
+                    <div class="ability-detail">
+                        <strong>Ability:</strong> Dragon Flame (Q)<br>
+                        <strong>Effect:</strong> Stuns monster for 2 seconds<br>
+                        <strong>Uses:</strong> 3 total (no recharge)
+                    </div>
+                </div>
 
-        // Start game
-        init();
+                <!-- Mist Wyrm Card -->
+                <div class="dragon-egg-card" data-dragon-type="MistWyrm">
+                    <div class="egg-visual mist-glow">💨</div>
+                    <h3>Mist Wyrm</h3>
+                    <p class="egg-desc">Born from lost memories. Calms fear and steadies the mind. Gentle and mysterious.</p>
+                    <div class="ability-detail">
+                        <strong>Ability:</strong> Calm Mind (Q)<br>
+                        <strong>Effect:</strong> +10 sanity, stop drain 8s<br>
+                        <strong>Uses:</strong> 3 total (no recharge)<br>
+                        <em class="special-note">⭐ This one feels... familiar.</em>
+                    </div>
+                </div>
 
-    </script>
+                <!-- Volt Serpent Card -->
+                <div class="dragon-egg-card" data-dragon-type="VoltSerpent">
+                    <div class="egg-visual volt-glow">⚡</div>
+                    <h3>Volt Serpent</h3>
+                    <p class="egg-desc">Born from storm-charged scales. Grants bursts of desperate speed. Fast and unpredictable.</p>
+                    <div class="ability-detail">
+                        <strong>Ability:</strong> Lightning Sprint (Q)<br>
+                        <strong>Effect:</strong> Speed × 1.8 for 8 seconds<br>
+                        <strong>Uses:</strong> 3 total (no recharge)
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TURN 9: Dragon Confirmation Modal -->
+    <div id="dragonConfirmModal" class="dragon-confirm-overlay hidden">
+        <div class="dragon-confirm-content">
+            <h2>CONFIRM YOUR BOND</h2>
+            <div class="confirm-info">
+                <h3 id="confirmDragonName"></h3>
+                <p id="confirmDragonDesc"></p>
+            </div>
+            <p class="confirm-warning">⚠️ This choice is permanent. Once bonded, you cannot change your dragon.</p>
+            <div class="confirm-buttons">
+                <button id="confirmDragonChoice" class="confirm-btn yes">Yes, Bond Forever</button>
+                <button id="cancelDragonChoice" class="confirm-btn no">Go Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TURN 10: Vault Ritual Modal -->
+    <div id="vaultRitualModal" class="vault-modal-overlay hidden">
+        <div class="vault-modal-content">
+            <h2>⭕ THE VAULT RITUAL ⭕</h2>
+            <p class="vault-intro">You stand at the ritual circle. Your dragon companion senses the ancient power emanating from the symbols.</p>
+            <p class="vault-warning">⚠️ <strong>WARNING:</strong> Once you begin the ritual, there is no turning back. Your choices will determine your fate.</p>
+            
+            <div class="ritual-status">
+                <p><strong>Dragon Companion:</strong> Ready</p>
+                <p><strong>Ritual Circle:</strong> Active</p>
+                <p><strong>Your Resolve:</strong> Tested</p>
+            </div>
+
+            <div class="ritual-buttons">
+                <button id="beginRitualBtn" class="ritual-btn begin">BEGIN THE RITUAL</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TURN 10: Ending Screen Modal -->
+    <div id="endingModal" class="ending-modal-overlay hidden">
+        <div class="ending-modal-content">
+            <h1 id="endingTitle" class="ending-title">ENDING</h1>
+            <h2 id="endingSubtitle" class="ending-subtitle"></h2>
+            
+            <div id="endingNarrative" class="ending-narrative">
+                <!-- Narrative paragraphs inserted here by JS -->
+            </div>
+            
+            <div class="ending-outcome">
+                <p id="endingOutcome"></p>
+            </div>
+
+            <div class="ending-divider"></div>
+
+            <div class="ending-stats">
+                <h3>FINAL STATS</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Health:</span>
+                        <span class="stat-data" id="statHealth">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Sanity:</span>
+                        <span class="stat-data" id="statSanity">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Dragon Trust:</span>
+                        <span class="stat-data" id="statTrust">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Dragon Chosen:</span>
+                        <span class="stat-data" id="statDragon">None</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Lore Notes:</span>
+                        <span class="stat-data" id="statLoreNotes">0/5</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Original Truth:</span>
+                        <span class="stat-data" id="statOriginalTruth">No</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ending-footer">
+                <p class="ending-thanks">Thank you for playing.</p>
+                <p class="ending-credit">ATC Horror Economics Game - Complete</p>
+                <!-- FIX #1: Restart Button -->
+                <button id="restartGameBtn" class="restart-btn">RESTART GAME</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
 </body>
 </html>
