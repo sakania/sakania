@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 7: MONSTER AI SYSTEM
+// ATC HORROR ECONOMICS GAME - TURN 8: FORGE PUZZLE SYSTEM
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -95,6 +95,7 @@ const CONSTANTS = {
 const UI_TEXT = {
     CLICK_TO_START: "Click to start",
     PRESS_E_INTERACT: "Press E to interact",
+    PRESS_E_FORGE: "Press E to answer the Forge",
     HEALTH_LABEL: "Health",
     SANITY_LABEL: "Sanity",
     AMMO_LABEL: "Stun Rounds",
@@ -124,6 +125,18 @@ const LORE_NOTES = {
         title: "The ATC Formula",
         text: "Average Total Cost = (Fixed Cost + Variable Cost) ÷ Quantity. The Forge will demand this truth. Both curses must be counted before dividing by output. Forget one, and the numbers will feast on your sanity."
     }
+};
+
+// ATC QUIZ DATA (Turn 8 - EXACT SPECIFICATION)
+const ATC_QUIZ = {
+    correct: 'a' // a) $30
+};
+
+const ATC_FEEDBACK = {
+    a: "Each unit bears $27 of rent-ghost + $3 of materials-demon = $30 per unit. The Forge accepts your truth. You understood that BOTH costs must be included before dividing.",
+    b: "You counted only the materials-demon ($300 ÷ 100 = $3) and pretended the $2700 rent-ghost doesn't exist. But fixed costs haunt you whether you produce or not. The ledger rejects your incomplete accounting.",
+    c: "You conjured $24 from thin air, shaving $600 from the true ledger with no economic spell. Total cost is $3000, not $2400. The Forge sees through false numbers.",
+    d: "You heard only the rent-ghost ($2700 ÷ 100 = $27) and ignored the materials-demon entirely. But variable costs exist when you produce. Average TOTAL cost includes both. Your truth is incomplete."
 };
 
 // Room waypoints for monster navigation
@@ -233,6 +246,110 @@ class GameState {
         this.loreNotesCollected++;
         this.drainSanity(CONSTANTS.SANITY_DRAIN_LORE_NOTE);
         console.log(`Lore notes collected: ${this.loreNotesCollected}/4`);
+    }
+}
+
+// ============================================================================
+// FORGE PUZZLE (TURN 8)
+// ============================================================================
+class ForgePuzzle {
+    constructor(gameManager) {
+        this.gameManager = gameManager;
+        this.puzzleAttempted = false;
+
+        this.modal = document.getElementById('forgeModal');
+        this.mathReveal = document.getElementById('mathReveal');
+        this.choiceFeedback = document.getElementById('choiceFeedback');
+        this.quizQuestion = document.getElementById('quizQuestion');
+
+        this.setupEvents();
+    }
+
+    setupEvents() {
+        // Option buttons
+        document.querySelectorAll('.option-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.handleAnswer(e.target.dataset.answer);
+            });
+        });
+
+        // Continue button
+        document.getElementById('continueBtn').addEventListener('click', () => {
+            this.hide();
+        });
+    }
+
+    show() {
+        if (this.puzzleAttempted) {
+            this.gameManager.showLoreText(
+                'The Forge',
+                'The Forge has judged you. Its question will not be asked twice.'
+            );
+            console.log('The Forge has judged you (no retry).');
+            return;
+        }
+
+        this.modal.classList.remove('hidden');
+    }
+
+    hide() {
+        this.modal.classList.add('hidden');
+    }
+
+    handleAnswer(answer) {
+        if (this.puzzleAttempted) return;
+        this.puzzleAttempted = true;
+
+        // Disable all buttons
+        document.querySelectorAll('.option-btn').forEach(btn => {
+            btn.disabled = true;
+        });
+
+        // Highlight chosen answer
+        const btn = document.querySelector(`.option-btn[data-answer="${answer}"]`);
+        if (btn) {
+            btn.classList.add(
+                answer === ATC_QUIZ.correct ? 'option-correct' : 'option-wrong'
+            );
+        }
+
+        // After short delay, show math reveal ALWAYS
+        setTimeout(() => {
+            this.quizQuestion.classList.add('hidden');
+            this.mathReveal.classList.remove('hidden');
+            this.choiceFeedback.innerHTML = `<p><strong>${ATC_FEEDBACK[answer]}</strong></p>`;
+            this.applyOutcome(answer);
+        }, 800);
+    }
+
+    applyOutcome(answer) {
+        const state = this.gameManager.state;
+
+        if (answer === ATC_QUIZ.correct) {
+            // SUCCESS: Unlock Hatchery, sanity reward, monster stays Roam
+            state.hatcheryDoorUnlocked = true;
+            state.forgePuzzleSolved = true;
+            state.restoreSanity(20);
+            console.log('✓ The Forge accepts your truth (ATC correct: a) $30).');
+            console.log('✓ Hatchery door UNLOCKED');
+        } else {
+            // FAILURE: Sanity -12, flicker, monster forced Chase, Hatchery locked
+            state.drainSanity(12);
+            state.hatcheryDoorUnlocked = false;
+
+            // Screen flicker
+            document.body.classList.add('screen-flicker');
+            setTimeout(() => {
+                document.body.classList.remove('screen-flicker');
+            }, 2000);
+
+            // Force monster into permanent Chase
+            if (this.gameManager.monsterAI) {
+                this.gameManager.monsterAI.forceChase();
+            }
+            console.log('✗ ATC wrong answer (' + answer + '). Monster forced into Chase state.');
+            console.log('✗ Hatchery door remains LOCKED');
+        }
     }
 }
 
@@ -522,7 +639,21 @@ class InteractionSystem {
         
         this.currentTarget = null;
         for (let intersect of intersects) {
-            const interactable = intersect.object.userData.interactable;
+            const obj = intersect.object;
+            
+            // Check for forge console (Turn 8)
+            if (obj.userData.interactableType === 'forge_console') {
+                this.currentTarget = {
+                    type: 'forge_console',
+                    interact: (gm) => {
+                        gm.forgePuzzle.show();
+                    }
+                };
+                break;
+            }
+            
+            // Check for regular interactables
+            const interactable = obj.userData.interactable;
             if (interactable && interactable.isActive) {
                 this.currentTarget = interactable;
                 break;
@@ -712,8 +843,9 @@ class FlashlightSystem {
 // LEVEL BUILDER
 // ============================================================================
 class LevelBuilder {
-    constructor(scene) {
+    constructor(scene, gameManager) {
         this.scene = scene;
+        this.gameManager = gameManager;
         this.collisionGeometry = [];
         this.interactables = [];
     }
@@ -940,6 +1072,7 @@ class LevelBuilder {
     }
     
     addForgeProps(offsetX, offsetZ) {
+        // Anvil
         const anvilMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x505050,
             roughness: 0.5,
@@ -954,6 +1087,27 @@ class LevelBuilder {
         anvil.castShadow = true;
         anvil.receiveShadow = true;
         this.scene.add(anvil);
+        
+        // TURN 8: Forge Console (center of room)
+        const consoleMat = new THREE.MeshStandardMaterial({
+            color: 0x00ff00,
+            emissive: 0x004400,
+            emissiveIntensity: 0.6,
+            roughness: 0.5
+        });
+        const consoleMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.2, 1.6, 0.8),
+            consoleMat
+        );
+        consoleMesh.position.set(offsetX, 0.8, offsetZ);
+        consoleMesh.castShadow = true;
+        consoleMesh.receiveShadow = true;
+        consoleMesh.userData.interactableType = 'forge_console';
+        this.scene.add(consoleMesh);
+
+        const consoleLight = new THREE.PointLight(0x00ff00, 2, 3);
+        consoleLight.position.set(offsetX, 1.5, offsetZ);
+        this.scene.add(consoleLight);
     }
     
     addHatcheryProps(offsetX, offsetZ) {
@@ -1041,6 +1195,7 @@ class GameManager {
         this.flashlightSystem = null;
         this.interactionSystem = null;
         this.monsterAI = null;
+        this.forgePuzzle = null; // TURN 8
         this.clock = new THREE.Clock();
         
         this.isPointerLocked = false;
@@ -1076,6 +1231,7 @@ class GameManager {
         this.setupFlashlight();
         this.setupInteractions();
         this.setupMonster();
+        this.setupForgePuzzle(); // TURN 8
         this.setupPointerLock();
         this.setupGameKeys();
         this.setupTestKeys();
@@ -1120,7 +1276,7 @@ class GameManager {
     }
     
     setupLevel() {
-        this.levelBuilder = new LevelBuilder(this.scene);
+        this.levelBuilder = new LevelBuilder(this.scene, this);
         this.levelBuilder.build5Rooms();
     }
     
@@ -1138,6 +1294,12 @@ class GameManager {
     
     setupMonster() {
         this.monsterAI = new MonsterAI(this.scene, this.player);
+    }
+    
+    setupForgePuzzle() {
+        // TURN 8: Initialize Forge Puzzle
+        this.forgePuzzle = new ForgePuzzle(this);
+        console.log('Turn 8: Forge Puzzle initialized');
     }
     
     setupPointerLock() {
@@ -1284,6 +1446,13 @@ class GameManager {
         const hasTarget = this.interactionSystem.update();
         
         if (hasTarget) {
+            // TURN 8: Custom prompt for Forge console
+            if (this.interactionSystem.currentTarget && 
+                this.interactionSystem.currentTarget.type === 'forge_console') {
+                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_FORGE;
+            } else {
+                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_INTERACT;
+            }
             this.dom.interactPrompt.classList.remove('hidden');
         } else {
             this.dom.interactPrompt.classList.add('hidden');
@@ -1367,4 +1536,5 @@ let game;
 
 window.addEventListener('DOMContentLoaded', () => {
     game = new GameManager();
+    console.log('ATC Horror Economics Game - Turn 8: Forge Puzzle System initialized');
 });
