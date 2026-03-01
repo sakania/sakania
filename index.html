@@ -55,7 +55,7 @@
                     <span class="trust-label" id="trustLabel">Unstable</span>
                 </div>
                 <div class="dragon-ability">
-                    <label id="abilityLabel">Ability</label>
+                    <label id="abilityLabel">Ability (Q)</label>
                     <span id="abilityUses">3/3</span>
                 </div>
             </div>
@@ -113,58 +113,65 @@
         </div>
     </div>
 
-    <!-- TURN 9: Dragon Choice Modal -->
+    <!-- TURN 9: Dragon Choice Modal (Egg Selection) -->
     <div id="dragonChoiceModal" class="dragon-modal-overlay hidden">
         <div class="dragon-modal-content">
             <h2>THE HATCHERY</h2>
-            <p class="dragon-intro">Three corrupted eggs rest before you. Choose wisely — your bond will be permanent.</p>
+            <p class="dragon-intro">Three corrupted eggs rest before you. Each holds a fragment of what was lost. Choose wisely — your bond will be permanent.</p>
 
-            <div class="egg-options">
-                <div class="egg-card" data-dragon="ember">
+            <div class="egg-grid">
+                <!-- Ember Drake Card -->
+                <div class="dragon-egg-card" data-dragon-type="EmberDrake">
                     <div class="egg-visual ember-glow">🔥</div>
                     <h3>Ember Drake</h3>
-                    <p class="egg-desc">Born from forge-fire. Can stun threats with short flame burst.</p>
+                    <p class="egg-desc">Born from forge-fire. Can stun threats with short flame burst. Aggressive and protective.</p>
                     <div class="ability-detail">
-                        <strong>Ability:</strong> Dragon Stun (Q)<br>
+                        <strong>Ability:</strong> Dragon Flame (Q)<br>
                         <strong>Effect:</strong> Stuns monster for 2 seconds<br>
-                        <strong>Uses:</strong> 3 total
+                        <strong>Uses:</strong> 3 total (no recharge)
                     </div>
-                    <button class="choose-btn" data-dragon="ember">Choose Ember Drake</button>
                 </div>
 
-                <div class="egg-card" data-dragon="mist">
+                <!-- Mist Wyrm Card -->
+                <div class="dragon-egg-card" data-dragon-type="MistWyrm">
                     <div class="egg-visual mist-glow">💨</div>
                     <h3>Mist Wyrm</h3>
-                    <p class="egg-desc">Born from lost memories. Calms fear and steadies the mind.</p>
+                    <p class="egg-desc">Born from lost memories. Calms fear and steadies the mind. Gentle and mysterious.</p>
                     <div class="ability-detail">
                         <strong>Ability:</strong> Calm Mind (Q)<br>
-                        <strong>Effect:</strong> Stop sanity drain for 8s + restore 10<br>
-                        <strong>Uses:</strong> 3 total<br>
-                        <em class="special-note">⭐ Required for Reunion ending</em>
+                        <strong>Effect:</strong> +10 sanity, stop drain 8s<br>
+                        <strong>Uses:</strong> 3 total (no recharge)<br>
+                        <em class="special-note">⭐ This one feels... familiar.</em>
                     </div>
-                    <button class="choose-btn" data-dragon="mist">Choose Mist Wyrm</button>
                 </div>
 
-                <div class="egg-card" data-dragon="volt">
+                <!-- Volt Serpent Card -->
+                <div class="dragon-egg-card" data-dragon-type="VoltSerpent">
                     <div class="egg-visual volt-glow">⚡</div>
                     <h3>Volt Serpent</h3>
-                    <p class="egg-desc">Born from storm-charged scales. Grants bursts of desperate speed.</p>
+                    <p class="egg-desc">Born from storm-charged scales. Grants bursts of desperate speed. Fast and unpredictable.</p>
                     <div class="ability-detail">
                         <strong>Ability:</strong> Lightning Sprint (Q)<br>
                         <strong>Effect:</strong> Speed × 1.8 for 8 seconds<br>
-                        <strong>Uses:</strong> 3 total
+                        <strong>Uses:</strong> 3 total (no recharge)
                     </div>
-                    <button class="choose-btn" data-dragon="volt">Choose Volt Serpent</button>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <div class="confirm-section hidden" id="confirmSection">
-                <h3>Are you sure?</h3>
-                <p id="confirmText">You are about to bond with <strong id="confirmDragonName"></strong>. This choice is permanent.</p>
-                <div class="confirm-buttons">
-                    <button id="confirmYes" class="confirm-btn yes">Yes, Bond Forever</button>
-                    <button id="confirmNo" class="confirm-btn no">Go Back</button>
-                </div>
+    <!-- TURN 9: Dragon Confirmation Modal -->
+    <div id="dragonConfirmModal" class="dragon-confirm-overlay hidden">
+        <div class="dragon-confirm-content">
+            <h2>CONFIRM YOUR BOND</h2>
+            <div class="confirm-info">
+                <h3 id="confirmDragonName"></h3>
+                <p id="confirmDragonDesc"></p>
+            </div>
+            <p class="confirm-warning">⚠️ This choice is permanent. Once bonded, you cannot change your dragon.</p>
+            <div class="confirm-buttons">
+                <button id="confirmDragonChoice" class="confirm-btn yes">Yes, Bond Forever</button>
+                <button id="cancelDragonChoice" class="confirm-btn no">Go Back</button>
             </div>
         </div>
     </div>
