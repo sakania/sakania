@@ -2,83 +2,81 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D Horror Survival Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashfall: The Last Ember</title>
+    <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <style>
-        body { margin: 0; }
-        canvas { display: block; }
-    </style>
 </head>
 <body>
-    <script>
-        // Set up scene, camera, and renderer
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+    <!-- HUD Overlay -->
+    <div id="hud">
+        <div class="hud-top">
+            <div class="stat-bar">
+                <label>Health</label>
+                <div class="bar" id="healthBar">
+                    <div class="bar-fill" style="width: 100%;"></div>
+                </div>
+                <span class="stat-value" id="healthValue">100</span>
+            </div>
+            <div class="stat-bar">
+                <label>Sanity</label>
+                <div class="bar" id="sanityBar">
+                    <div class="bar-fill" style="width: 100%;"></div>
+                </div>
+                <span class="stat-value" id="sanityValue">100</span>
+            </div>
+        </div>
+        <div class="hud-bottom">
+            <div class="inventory">
+                <div class="item">
+                    <label>Stun Rounds</label>
+                    <span id="ammoCount">2</span>
+                </div>
+                <div class="item">
+                    <label>Battery</label>
+                    <span id="batteryCount">100%</span>
+                </div>
+                <div class="item">
+                    <label>Flashlight</label>
+                    <span id="flashlightStatus">OFF</span>
+                </div>
+            </div>
+            <div class="dragon-info" id="dragonInfo" style="display: none;">
+                <div class="dragon-trust">
+                    <label>Dragon Bond</label>
+                    <div class="bar" id="dragonTrustBar">
+                        <div class="bar-fill" style="width: 50%;"></div>
+                    </div>
+                    <span class="trust-label" id="trustLabel">Unstable</span>
+                </div>
+                <div class="dragon-ability">
+                    <label>Ability Uses</label>
+                    <span id="abilityUses">3/3</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        // Procedural Dungeon Generation
-        function generateDungeon() {
-            // TODO: Implement procedural generation logic
-        }
+    <!-- Interaction Prompt -->
+    <div id="interactPrompt" style="display: none;">
+        Press E to interact
+    </div>
 
-        // Enemy AI
-        function setupEnemyAI() {
-            // TODO: Implement enemy AI logic
-        }
+    <!-- Log Box -->
+    <div id="logBox"></div>
 
-        // Dragon Companion
-        function addDragonCompanion() {
-            // TODO: Implement dragon companion logic
-        }
+    <!-- Pointer Lock Instruction -->
+    <div id="lockInstruction">
+        <p>Click to start</p>
+    </div>
 
-        // Sound Management
-        function setupSound() {
-            // TODO: Implement Web Audio for horror sounds
-        }
+    <!-- Modal Overlay (for puzzles/endings) -->
+    <div id="modalOverlay" class="modal-overlay" style="display: none;">
+        <div id="modalContent" class="modal-content">
+            <!-- Dynamic content injected here -->
+        </div>
+    </div>
 
-        // Dynamic Lighting
-        function setupLighting() {
-            const light = new THREE.DirectionalLight(0xffffff, 1);
-            light.position.set(5, 10, 7.5);
-            scene.add(light);
-        }
-
-        // Puzzle Solving
-        function setupPuzzles() {
-            // TODO: Implement puzzle solving mechanics
-        }
-
-        // Multiple Endings
-        function setupEndings() {
-            // TODO: Implement multiple ending logic
-        }
-
-        // Initialize game
-        function init() {
-            generateDungeon();
-            setupEnemyAI();
-            addDragonCompanion();
-            setupSound();
-            setupLighting();
-            setupPuzzles();
-            setupEndings();
-
-            camera.position.z = 5;
-            animate();
-        }
-
-        // Animation loop
-        function animate() {
-            requestAnimationFrame(animate);
-            // Update game state
-            renderer.render(scene, camera);
-        }
-
-        // Start game
-        init();
-
-    </script>
+    <script src="game.js"></script>
 </body>
 </html>
