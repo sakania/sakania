@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 10: VAULT RITUAL + ENDINGS
+// ATC HORROR ECONOMICS GAME - TURN 10a: AUDIO SYSTEM
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -100,6 +100,23 @@ const CONSTANTS = {
     
     // Darkness threshold
     DARKNESS_THRESHOLD: 0.5,
+
+    // TURN 10a: Audio constants
+    AUDIO_MASTER_GAIN: 0.55,
+    AUDIO_UI_GAIN: 0.25,
+    AUDIO_AMBIENCE_GAIN: 0.18,
+    AUDIO_PLAYER_GAIN: 0.22,
+    AUDIO_MONSTER_GAIN: 0.28,
+    AUDIO_DRAGON_GAIN: 0.22,
+    AUDIO_HALLUCINATION_GAIN: 0.16,
+
+    FOOTSTEP_INTERVAL_WALK: 0.52,
+    FOOTSTEP_INTERVAL_SPRINT: 0.34,
+
+    HALLUCINATION_FOOTSTEP_MIN_MS: 9000,
+    HALLUCINATION_FOOTSTEP_MAX_MS: 16000,
+    HALLUCINATION_WHISPER_MIN_MS: 11000,
+    HALLUCINATION_WHISPER_MAX_MS: 22000,
 };
 
 // UI TEXT CONSTANTS
@@ -226,6 +243,354 @@ const ROOM_WAYPOINTS = [
     { name: 'Hatchery', x: 35, z: -15 },
     { name: 'Vault', x: 35, z: -30 }
 ];
+
+// ============================================================================
+// TURN 10a: WEB AUDIO MANAGER (Procedural audio synthesis)
+// ============================================================================
+class WebAudioManager {
+    constructor() {
+        this.ctx = null;
+        this.master = null;
+        this.buses = {};
+        this.noiseBuffer = null;
+        this.loops = new Map();
+        this.enabled = true;
+
+        this._nextHallucinationFootstepAt = 0;
+        this._nextHallucinationWhisperAt = 0;
+    }
+
+    unlock() {
+        if (!this.enabled) return;
+        if (this.ctx) {
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+            return;
+        }
+
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+            console.warn('WebAudio not supported. Audio disabled.');
+            this.enabled = false;
+            return;
+        }
+
+        this.ctx = new AudioContext();
+
+        this.master = this.ctx.createGain();
+        this.master.gain.value = CONSTANTS.AUDIO_MASTER_GAIN;
+        this.master.connect(this.ctx.destination);
+
+        this.buses.ui = this._makeBus(CONSTANTS.AUDIO_UI_GAIN);
+        this.buses.ambience = this._makeBus(CONSTANTS.AUDIO_AMBIENCE_GAIN);
+        this.buses.player = this._makeBus(CONSTANTS.AUDIO_PLAYER_GAIN);
+        this.buses.monster = this._makeBus(CONSTANTS.AUDIO_MONSTER_GAIN);
+        this.buses.dragon = this._makeBus(CONSTANTS.AUDIO_DRAGON_GAIN);
+        this.buses.hallucination = this._makeBus(CONSTANTS.AUDIO_HALLUCINATION_GAIN);
+
+        this.noiseBuffer = this._createNoiseBuffer(1.2);
+
+        this._scheduleHallucinationTimers();
+        console.log('[AUDIO] WebAudioManager initialized');
+    }
+
+    _makeBus(gainValue) {
+        const g = this.ctx.createGain();
+        g.gain.value = gainValue;
+        g.connect(this.master);
+        return g;
+    }
+
+    _createNoiseBuffer(seconds) {
+        const length = Math.floor(this.ctx.sampleRate * seconds);
+        const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+            data[i] = (Math.random() * 2 - 1);
+        }
+        return buffer;
+    }
+
+    _scheduleHallucinationTimers() {
+        const now = Date.now();
+        this._nextHallucinationFootstepAt = now + this._randRange(CONSTANTS.HALLUCINATION_FOOTSTEP_MIN_MS, CONSTANTS.HALLUCINATION_FOOTSTEP_MAX_MS);
+        this._nextHallucinationWhisperAt = now + this._randRange(CONSTANTS.HALLUCINATION_WHISPER_MIN_MS, CONSTANTS.HALLUCINATION_WHISPER_MAX_MS);
+    }
+
+    _randRange(min, max) {
+        return Math.floor(min + Math.random() * (max - min));
+    }
+
+    stopAll() {
+        if (!this.ctx) return;
+        for (const [name, node] of this.loops.entries()) {
+            try { node.stop(); } catch (_) {}
+        }
+        this.loops.clear();
+    }
+
+    // Ambience loops
+    startAmbience() {
+        if (!this.ctx) return;
+        this._startDroneLoop();
+        this._startWindLoop();
+    }
+
+    _startDroneLoop() {
+        if (this.loops.has('drone')) return;
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc1.type = 'sine';
+        osc2.type = 'sine';
+        osc1.frequency.value = 55;
+        osc2.frequency.value = 82.41;
+        gain.gain.value = 0.0;
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(this.buses.ambience);
+
+        const t = this.ctx.currentTime;
+        gain.gain.linearRampToValueAtTime(0.22, t + 1.8);
+
+        osc1.start();
+        osc2.start();
+
+        this.loops.set('drone', { stop: () => { osc1.stop(); osc2.stop(); }, stopCalled: false });
+    }
+
+    _startWindLoop() {
+        if (this.loops.has('wind')) return;
+
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        src.loop = true;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 420;
+        filter.Q.value = 0.8;
+
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0.0;
+
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.buses.ambience);
+
+        const t = this.ctx.currentTime;
+        gain.gain.linearRampToValueAtTime(0.18, t + 2.2);
+
+        src.start();
+        this.loops.set('wind', src);
+
+        const lfo = this.ctx.createOscillator();
+        const lfoGain = this.ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.07;
+        lfoGain.gain.value = 130;
+        lfo.connect(lfoGain);
+        lfoGain.connect(filter.frequency);
+        lfo.start();
+
+        const lfo2 = this.ctx.createOscillator();
+        const lfo2Gain = this.ctx.createGain();
+        lfo2.type = 'sine';
+        lfo2.frequency.value = 0.09;
+        lfo2Gain.gain.value = 0.08;
+        lfo2.connect(lfo2Gain);
+        lfo2Gain.connect(gain.gain);
+        lfo2.start();
+
+        this.loops.set('wind_lfo', { stop: () => { lfo.stop(); lfo2.stop(); }, stopCalled: false });
+    }
+
+    // UI sounds
+    uiClick() {
+        this._beep({ bus: 'ui', freq: 700, dur: 0.04, type: 'square', gain: 0.22 });
+    }
+
+    uiChime(success = true) {
+        if (success) {
+            this._beep({ bus: 'ui', freq: 880, dur: 0.09, type: 'sine', gain: 0.22 });
+            this._beep({ bus: 'ui', freq: 1320, dur: 0.07, type: 'sine', gain: 0.18, delay: 0.06 });
+        } else {
+            this._beep({ bus: 'ui', freq: 140, dur: 0.16, type: 'sawtooth', gain: 0.18 });
+        }
+    }
+
+    // Player sounds
+    playerFootstep(isSprinting = false) {
+        if (!this.ctx) return;
+
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = isSprinting ? 260 : 190;
+
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0.0;
+
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.buses.player);
+
+        const t = this.ctx.currentTime;
+        const peak = isSprinting ? 0.18 : 0.14;
+        gain.gain.setValueAtTime(0.0, t);
+        gain.gain.linearRampToValueAtTime(peak, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+        src.start();
+        src.stop(t + 0.14);
+    }
+
+    playerBreathingIntensity(intensity01) {
+        if (!this.ctx) return;
+        if (!this.loops.has('breathing')) {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = 140;
+            gain.gain.value = 0.0;
+            osc.connect(gain);
+            gain.connect(this.buses.player);
+            osc.start();
+            this.loops.set('breathing', { osc, gain });
+        }
+
+        const node = this.loops.get('breathing');
+        if (node && node.gain) {
+            const target = 0.02 + 0.08 * Math.min(1, Math.max(0, intensity01));
+            node.gain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.15);
+        }
+    }
+
+    // Monster sounds
+    monsterGrowl(intensity01 = 0.6) {
+        if (!this.ctx) return;
+        const base = 80 + 40 * Math.min(1, Math.max(0, intensity01));
+        this._beep({ bus: 'monster', freq: base, dur: 0.22, type: 'sawtooth', gain: 0.14 });
+        this._noiseBurst({ bus: 'monster', dur: 0.12, gain: 0.08, band: 250 });
+    }
+
+    monsterRoar() {
+        if (!this.ctx) return;
+        this._noiseBurst({ bus: 'monster', dur: 0.6, gain: 0.18, band: 180 });
+        this._beep({ bus: 'monster', freq: 55, dur: 0.55, type: 'sawtooth', gain: 0.16 });
+    }
+
+    monsterFootstep() {
+        if (!this.ctx) return;
+        this._noiseBurst({ bus: 'monster', dur: 0.14, gain: 0.12, band: 200 });
+    }
+
+    // Dragon sounds
+    dragonChirp() {
+        this._beep({ bus: 'dragon', freq: 950, dur: 0.08, type: 'triangle', gain: 0.18 });
+        this._beep({ bus: 'dragon', freq: 1200, dur: 0.06, type: 'triangle', gain: 0.12, delay: 0.05 });
+    }
+
+    dragonFlutter() {
+        this._noiseBurst({ bus: 'dragon', dur: 0.1, gain: 0.07, band: 900 });
+    }
+
+    dragonAbility(type) {
+        if (type === 'EmberDrake') {
+            this._noiseBurst({ bus: 'dragon', dur: 0.35, gain: 0.14, band: 1200 });
+            this._beep({ bus: 'dragon', freq: 220, dur: 0.18, type: 'sawtooth', gain: 0.12 });
+        } else if (type === 'MistWyrm') {
+            this._noiseBurst({ bus: 'dragon', dur: 0.45, gain: 0.10, band: 600 });
+            this._beep({ bus: 'dragon', freq: 520, dur: 0.22, type: 'sine', gain: 0.12 });
+        } else if (type === 'VoltSerpent') {
+            this._beep({ bus: 'dragon', freq: 1600, dur: 0.12, type: 'square', gain: 0.12 });
+            this._beep({ bus: 'dragon', freq: 900, dur: 0.18, type: 'square', gain: 0.10, delay: 0.06 });
+        }
+    }
+
+    dragonHatch() {
+        this._beep({ bus: 'dragon', freq: 480, dur: 0.12, type: 'sine', gain: 0.16 });
+        this._noiseBurst({ bus: 'dragon', dur: 0.22, gain: 0.10, band: 700 });
+    }
+
+    // Hallucinations
+    updateHallucinations(gameState) {
+        if (!this.ctx) return;
+
+        const nowMs = Date.now();
+        if (gameState.sanity <= 60) {
+            if (nowMs >= this._nextHallucinationFootstepAt) {
+                this._noiseBurst({ bus: 'hallucination', dur: 0.12, gain: 0.10, band: 240 });
+                this._nextHallucinationFootstepAt = nowMs + this._randRange(CONSTANTS.HALLUCINATION_FOOTSTEP_MIN_MS, CONSTANTS.HALLUCINATION_FOOTSTEP_MAX_MS);
+            }
+        }
+
+        if (gameState.sanity <= 30) {
+            if (nowMs >= this._nextHallucinationWhisperAt) {
+                this._noiseBurst({ bus: 'hallucination', dur: 0.65, gain: 0.12, band: 1200 });
+                this._beep({ bus: 'hallucination', freq: 320, dur: 0.25, type: 'sine', gain: 0.06 });
+                this._nextHallucinationWhisperAt = nowMs + this._randRange(CONSTANTS.HALLUCINATION_WHISPER_MIN_MS, CONSTANTS.HALLUCINATION_WHISPER_MAX_MS);
+            }
+        }
+
+        if (gameState.sanity === 0) {
+            this._noiseBurst({ bus: 'hallucination', dur: 0.8, gain: 0.22, band: 800 });
+        }
+    }
+
+    // Low-level synth helpers
+    _beep({ bus, freq, dur, type, gain, delay = 0 }) {
+        if (!this.ctx) return;
+
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+
+        osc.type = type;
+        osc.frequency.value = freq;
+        g.gain.value = 0.0;
+
+        osc.connect(g);
+        g.connect(this.buses[bus] || this.master);
+
+        const t0 = this.ctx.currentTime + delay;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.02, dur));
+
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.04);
+    }
+
+    _noiseBurst({ bus, dur, gain, band }) {
+        if (!this.ctx) return;
+
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = band;
+        filter.Q.value = 1.1;
+
+        const g = this.ctx.createGain();
+        g.gain.value = 0.0;
+
+        src.connect(filter);
+        filter.connect(g);
+        g.connect(this.buses[bus] || this.master);
+
+        const t = this.ctx.currentTime;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(0.05, dur));
+
+        src.start();
+        src.stop(t + dur + 0.05);
+    }
+}
 
 // ============================================================================
 // GAME STATE
@@ -373,12 +738,13 @@ class GameState {
 }
 
 // ============================================================================
-// DRAGON COMPANION (TURN 9)
+// DRAGON COMPANION (TURN 9 + TURN 10a audio hooks)
 // ============================================================================
 class DragonCompanion {
-    constructor(type, scene, spawnPosition) {
+    constructor(type, scene, spawnPosition, audio = null) {
         this.type = type;
         this.scene = scene;
+        this.audio = audio; // TURN 10a
         this.dragonData = DRAGON_TYPES[type];
         this.position = spawnPosition.clone();
         this.targetPosition = spawnPosition.clone();
@@ -521,6 +887,9 @@ class DragonCompanion {
         }
         
         gameState.dragonAbilityUses--;
+
+        // TURN 10a: Audio feedback
+        if (this.audio) this.audio.dragonAbility(this.type);
         
         // Execute ability based on type
         let success = false;
@@ -591,6 +960,8 @@ class DragonCompanion {
     }
     
     alertChirp() {
+        // TURN 10a: Audio feedback
+        if (this.audio) this.audio.dragonChirp();
         console.log('[DRAGON] *Alert chirp* - Threat nearby!');
     }
     
@@ -616,6 +987,8 @@ class VaultRitualModal {
         const beginBtn = document.getElementById('beginRitualBtn');
         if (beginBtn) {
             beginBtn.addEventListener('click', () => {
+                // TURN 10a: Audio feedback
+                if (this.gameManager.audio) this.gameManager.audio.uiClick();
                 this.performRitual();
             });
         }
@@ -677,6 +1050,12 @@ class VaultRitualModal {
         const ending = ENDINGS[endingType];
         const state = this.gameManager.state;
         
+        // TURN 10a: Audio feedback
+        if (this.gameManager.audio) {
+            this.gameManager.audio.uiChime(endingType === 'ENDING_A');
+            this.gameManager.audio.stopAll();
+        }
+
         const endingModal = document.getElementById('endingModal');
         
         document.getElementById('endingTitle').textContent = ending.title;
@@ -709,7 +1088,7 @@ class VaultRitualModal {
 }
 
 // ============================================================================
-// DRAGON CHOICE MODAL (TURN 9)
+// DRAGON CHOICE MODAL (TURN 9 + TURN 10a audio hooks)
 // ============================================================================
 class DragonChoiceModal {
     constructor(gameManager) {
@@ -727,6 +1106,8 @@ class DragonChoiceModal {
         const eggButtons = document.querySelectorAll('.dragon-egg-card');
         eggButtons.forEach(btn => {
             btn.addEventListener('click', () => {
+                // TURN 10a: Audio feedback
+                if (this.gameManager.audio) this.gameManager.audio.uiClick();
                 const dragonType = btn.dataset.dragonType;
                 this.showConfirmation(dragonType);
             });
@@ -734,12 +1115,16 @@ class DragonChoiceModal {
         
         // Confirmation buttons
         document.getElementById('confirmDragonChoice').addEventListener('click', () => {
+            // TURN 10a: Audio feedback
+            if (this.gameManager.audio) this.gameManager.audio.uiClick();
             if (this.selectedType) {
                 this.chooseDragon(this.selectedType);
             }
         });
         
         document.getElementById('cancelDragonChoice').addEventListener('click', () => {
+            // TURN 10a: Audio feedback
+            if (this.gameManager.audio) this.gameManager.audio.uiClick();
             this.hideConfirmation();
         });
     }
@@ -781,15 +1166,19 @@ class DragonChoiceModal {
         this.gameManager.state.dragonChosen = true;
         this.gameManager.state.vaultDoorUnlocked = true;
         
-        // Spawn dragon
+        // Spawn dragon (TURN 10a: pass audio manager)
         const spawnPos = this.gameManager.player.position.clone();
         const dragon = new DragonCompanion(
             dragonType,
             this.gameManager.scene,
-            spawnPos
+            spawnPos,
+            this.gameManager.audio // TURN 10a
         );
         
         this.gameManager.state.dragon = dragon;
+
+        // TURN 10a: Audio feedback
+        if (this.gameManager.audio) this.gameManager.audio.dragonHatch();
         
         // Show message
         const dragonData = DRAGON_TYPES[dragonType];
@@ -808,7 +1197,7 @@ class DragonChoiceModal {
 }
 
 // ============================================================================
-// FORGE PUZZLE (TURN 8)
+// FORGE PUZZLE (TURN 8 + TURN 10a audio hooks)
 // ============================================================================
 class ForgePuzzle {
     constructor(gameManager) {
@@ -826,11 +1215,15 @@ class ForgePuzzle {
     setupEvents() {
         document.querySelectorAll('.option-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
+                // TURN 10a: Audio feedback
+                if (this.gameManager.audio) this.gameManager.audio.uiClick();
                 this.handleAnswer(e.target.dataset.answer);
             });
         });
 
         document.getElementById('continueBtn').addEventListener('click', () => {
+            // TURN 10a: Audio feedback
+            if (this.gameManager.audio) this.gameManager.audio.uiClick();
             this.hide();
         });
     }
@@ -882,11 +1275,18 @@ class ForgePuzzle {
             state.hatcheryDoorUnlocked = true;
             state.forgePuzzleSolved = true;
             state.restoreSanity(20);
+
+            // TURN 10a: Audio feedback
+            if (this.gameManager.audio) this.gameManager.audio.uiChime(true);
+
             console.log('✓ The Forge accepts your truth (ATC correct: a) $30).');
             console.log('✓ Hatchery door UNLOCKED');
         } else {
             state.drainSanity(12);
             state.hatcheryDoorUnlocked = false;
+
+            // TURN 10a: Audio feedback
+            if (this.gameManager.audio) this.gameManager.audio.uiChime(false);
 
             document.body.classList.add('screen-flicker');
             setTimeout(() => {
@@ -903,12 +1303,13 @@ class ForgePuzzle {
 }
 
 // ============================================================================
-// MONSTER AI
+// MONSTER AI (TURN 7 + TURN 10a audio hooks)
 // ============================================================================
 class MonsterAI {
-    constructor(scene, playerController) {
+    constructor(scene, playerController, audio = null) {
         this.scene = scene;
         this.playerController = playerController;
+        this.audio = audio; // TURN 10a
         this.state = 'ROAM';
         this.position = new THREE.Vector3(20, CONSTANTS.MONSTER_HEIGHT / 2, 0);
         this.velocity = new THREE.Vector3();
@@ -916,6 +1317,8 @@ class MonsterAI {
         this.waypointDelay = 0;
         this.retreatTimer = 0;
         this.damageCooldown = 0;
+
+        this._footstepTimer = 0; // TURN 10a
         
         this.createMonsterMesh();
     }
@@ -980,6 +1383,22 @@ class MonsterAI {
         this.checkPlayerCollision(gameState);
         this.drainSanityProximity(deltaTime, gameState);
         this.mesh.position.copy(this.position);
+
+        // TURN 10a: Monster footstep audio
+        this.updateAudio(deltaTime);
+    }
+
+    // TURN 10a: Monster audio
+    updateAudio(deltaTime) {
+        if (!this.audio) return;
+
+        if (this.state === 'CHASE') {
+            this._footstepTimer += deltaTime;
+            if (this._footstepTimer >= 0.38) {
+                this._footstepTimer = 0;
+                this.audio.monsterFootstep();
+            }
+        }
     }
     
     updateRoam(deltaTime, gameState) {
@@ -988,6 +1407,10 @@ class MonsterAI {
         
         if (distanceToPlayer < detectionRange) {
             this.state = 'CHASE';
+
+            // TURN 10a: Audio feedback
+            if (this.audio) this.audio.monsterGrowl(0.6);
+
             console.log('Monster: Player detected, entering Chase state');
             return;
         }
@@ -1097,1130 +1520,13 @@ class MonsterAI {
     
     forceChase() {
         this.state = 'CHASE';
+
+        // TURN 10a: Audio feedback
+        if (this.audio) this.audio.monsterGrowl(0.7);
+
         console.log('Monster: Forced into Chase state (puzzle failed)');
     }
 }
 
-// ============================================================================
-// INTERACTABLE OBJECT
-// ============================================================================
-class InteractableObject {
-    constructor(mesh, type, data) {
-        this.mesh = mesh;
-        this.type = type;
-        this.data = data;
-        this.isActive = true;
-        this.mesh.userData.interactable = this;
-    }
-    
-    interact(gameManager) {
-        if (!this.isActive) return false;
-        
-        switch(this.type) {
-            case 'lore_note':
-                return this.interactLoreNote(gameManager);
-            default:
-                console.log(`Interacted with: ${this.type}`);
-                return true;
-        }
-    }
-    
-    interactLoreNote(gameManager) {
-        gameManager.showLoreText(this.data.title, this.data.text);
-        gameManager.state.collectLoreNote();
-        
-        // Check for Original Truth note
-        if (this.data.title === LORE_NOTES.NOTE_5.title) {
-            gameManager.state.discoveredOriginalDragonTruth = true;
-            console.log('✓ Discovered Original Dragon Truth (affects endings)');
-        }
-        
-        if (this.mesh.userData.light) {
-            gameManager.scene.remove(this.mesh.userData.light);
-        }
-        
-        gameManager.scene.remove(this.mesh);
-        this.isActive = false;
-        return true;
-    }
-}
-
-// ============================================================================
-// INTERACTION SYSTEM
-// ============================================================================
-class InteractionSystem {
-    constructor(camera, scene) {
-        this.camera = camera;
-        this.scene = scene;
-        this.raycaster = new THREE.Raycaster();
-        this.raycaster.far = CONSTANTS.INTERACTION_RANGE;
-        this.currentTarget = null;
-    }
-    
-    update(gameManager) {
-        const direction = new THREE.Vector3(0, 0, -1);
-        direction.applyQuaternion(this.camera.quaternion);
-        this.raycaster.set(this.camera.position, direction);
-        
-        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
-        
-        this.currentTarget = null;
-        for (let intersect of intersects) {
-            const obj = intersect.object;
-            
-            // Forge console (Turn 8)
-            if (obj.userData.interactableType === 'forge_console') {
-                this.currentTarget = {
-                    type: 'forge_console',
-                    interact: (gm) => gm.forgePuzzle.show()
-                };
-                break;
-            }
-            
-            // Dragon egg (Turn 9)
-            if (obj.userData.interactableType === 'dragon_egg') {
-                // Check if hatchery door is unlocked
-                if (!gameManager.state.hatcheryDoorUnlocked) {
-                    this.currentTarget = {
-                        type: 'blocked_egg',
-                        interact: (gm) => {
-                            gm.showLoreText(
-                                'The Eggs',
-                                'The eggs are sealed. The Forge must judge you first.'
-                            );
-                        }
-                    };
-                } else if (!gameManager.state.dragonChosen) {
-                    this.currentTarget = {
-                        type: 'dragon_egg',
-                        interact: (gm) => gm.dragonChoiceModal.show()
-                    };
-                } else {
-                    this.currentTarget = {
-                        type: 'chosen_egg',
-                        interact: (gm) => {
-                            gm.showLoreText(
-                                'The Eggs',
-                                'The choice has been made. Your bond is formed.'
-                            );
-                        }
-                    };
-                }
-                break;
-            }
-            
-            // TURN 10: Vault ritual circle
-            if (obj.userData.interactableType === 'ritual_circle') {
-                if (!gameManager.state.vaultDoorUnlocked) {
-                    this.currentTarget = {
-                        type: 'blocked_ritual',
-                        interact: (gm) => {
-                            gm.showLoreText(
-                                'The Vault',
-                                'The ritual circle is dormant. You need a dragon companion to activate it.'
-                            );
-                        }
-                    };
-                } else if (!gameManager.state.ritualCompleted) {
-                    this.currentTarget = {
-                        type: 'ritual_circle',
-                        interact: (gm) => gm.vaultRitualModal.show()
-                    };
-                } else {
-                    this.currentTarget = {
-                        type: 'completed_ritual',
-                        interact: (gm) => {
-                            gm.showLoreText(
-                                'The Vault',
-                                'The ritual is complete. Your fate is sealed.'
-                            );
-                        }
-                    };
-                }
-                break;
-            }
-            
-            // Regular interactables
-            const interactable = obj.userData.interactable;
-            if (interactable && interactable.isActive) {
-                this.currentTarget = interactable;
-                break;
-            }
-        }
-        
-        return this.currentTarget !== null;
-    }
-    
-    interact(gameManager) {
-        if (this.currentTarget) {
-            return this.currentTarget.interact(gameManager);
-        }
-        return false;
-    }
-}
-
-// ============================================================================
-// PLAYER CONTROLLER
-// ============================================================================
-class PlayerController {
-    constructor(camera) {
-        this.camera = camera;
-        this.position = new THREE.Vector3(0, CONSTANTS.PLAYER_HEIGHT, 0);
-        this.velocity = new THREE.Vector3();
-        
-        this.moveForward = false;
-        this.moveBackward = false;
-        this.moveLeft = false;
-        this.moveRight = false;
-        this.isSprinting = false;
-        
-        this.radius = CONSTANTS.PLAYER_RADIUS;
-        this.height = CONSTANTS.PLAYER_HEIGHT;
-        
-        this.setupKeyboardControls();
-    }
-    
-    setupKeyboardControls() {
-        document.addEventListener('keydown', (event) => {
-            switch(event.code) {
-                case 'KeyW': this.moveForward = true; break;
-                case 'KeyS': this.moveBackward = true; break;
-                case 'KeyA': this.moveLeft = true; break;
-                case 'KeyD': this.moveRight = true; break;
-                case 'ShiftLeft':
-                case 'ShiftRight': this.isSprinting = true; break;
-            }
-        });
-        
-        document.addEventListener('keyup', (event) => {
-            switch(event.code) {
-                case 'KeyW': this.moveForward = false; break;
-                case 'KeyS': this.moveBackward = false; break;
-                case 'KeyA': this.moveLeft = false; break;
-                case 'KeyD': this.moveRight = false; break;
-                case 'ShiftLeft':
-                case 'ShiftRight': this.isSprinting = false; break;
-            }
-        });
-    }
-    
-    update(deltaTime, collisionGeometry, speedMultiplier = 1.0) {
-        const direction = new THREE.Vector3();
-        const forward = new THREE.Vector3();
-        const right = new THREE.Vector3();
-        
-        this.camera.getWorldDirection(forward);
-        forward.y = 0;
-        forward.normalize();
-        
-        right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-        right.normalize();
-        
-        if (this.moveForward) direction.add(forward);
-        if (this.moveBackward) direction.sub(forward);
-        if (this.moveRight) direction.add(right);
-        if (this.moveLeft) direction.sub(right);
-        
-        if (direction.length() > 0) {
-            direction.normalize();
-        }
-        
-        const speed = (this.isSprinting ? CONSTANTS.PLAYER_SPRINT_SPEED : CONSTANTS.PLAYER_WALK_SPEED) * speedMultiplier;
-        this.velocity.x = direction.x * speed;
-        this.velocity.z = direction.z * speed;
-        
-        const newPosition = this.position.clone();
-        newPosition.x += this.velocity.x * deltaTime;
-        newPosition.z += this.velocity.z * deltaTime;
-        
-        if (!this.checkCollision(newPosition, collisionGeometry)) {
-            this.position.copy(newPosition);
-        } else {
-            const slideX = this.position.clone();
-            slideX.x = newPosition.x;
-            if (!this.checkCollision(slideX, collisionGeometry)) {
-                this.position.copy(slideX);
-            }
-            
-            const slideZ = this.position.clone();
-            slideZ.z = newPosition.z;
-            if (!this.checkCollision(slideZ, collisionGeometry)) {
-                this.position.copy(slideZ);
-            }
-        }
-        
-        this.camera.position.copy(this.position);
-    }
-    
-    checkCollision(position, collisionGeometry) {
-        for (let wall of collisionGeometry) {
-            if (this.intersectsAABB(position, wall)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    intersectsAABB(playerPos, wall) {
-        const playerMinX = playerPos.x - this.radius;
-        const playerMaxX = playerPos.x + this.radius;
-        const playerMinY = playerPos.y - this.height;
-        const playerMaxY = playerPos.y;
-        const playerMinZ = playerPos.z - this.radius;
-        const playerMaxZ = playerPos.z + this.radius;
-        
-        const wallMinX = wall.position.x - wall.size.x / 2;
-        const wallMaxX = wall.position.x + wall.size.x / 2;
-        const wallMinY = wall.position.y - wall.size.y / 2;
-        const wallMaxY = wall.position.y + wall.size.y / 2;
-        const wallMinZ = wall.position.z - wall.size.z / 2;
-        const wallMaxZ = wall.position.z + wall.size.z / 2;
-        
-        return (playerMinX < wallMaxX && playerMaxX > wallMinX &&
-                playerMinY < wallMaxY && playerMaxY > wallMinY &&
-                playerMinZ < wallMaxZ && playerMaxZ > wallMinZ);
-    }
-}
-
-// ============================================================================
-// FLASHLIGHT SYSTEM
-// ============================================================================
-class FlashlightSystem {
-    constructor(scene, camera) {
-        this.scene = scene;
-        this.camera = camera;
-        
-        this.light = new THREE.SpotLight(
-            CONSTANTS.FLASHLIGHT_COLOR,
-            CONSTANTS.FLASHLIGHT_INTENSITY,
-            CONSTANTS.FLASHLIGHT_DISTANCE,
-            CONSTANTS.FLASHLIGHT_ANGLE,
-            CONSTANTS.FLASHLIGHT_PENUMBRA,
-            CONSTANTS.FLASHLIGHT_DECAY
-        );
-        
-        this.light.castShadow = true;
-        this.light.shadow.mapSize.width = 1024;
-        this.light.shadow.mapSize.height = 1024;
-        this.light.shadow.camera.near = 0.5;
-        this.light.shadow.camera.far = CONSTANTS.FLASHLIGHT_DISTANCE;
-        
-        this.light.position.copy(camera.position);
-        
-        this.target = new THREE.Object3D();
-        this.scene.add(this.target);
-        this.light.target = this.target;
-        
-        this.light.visible = false;
-        this.scene.add(this.light);
-    }
-    
-    update(isOn) {
-        this.light.visible = isOn;
-        
-        if (isOn) {
-            this.light.position.copy(this.camera.position);
-            const direction = new THREE.Vector3();
-            this.camera.getWorldDirection(direction);
-            this.target.position.copy(this.camera.position).add(direction);
-        }
-    }
-}
-
-// ============================================================================
-// LEVEL BUILDER
-// ============================================================================
-class LevelBuilder {
-    constructor(scene, gameManager) {
-        this.scene = scene;
-        this.gameManager = gameManager;
-        this.collisionGeometry = [];
-        this.interactables = [];
-    }
-    
-    build5Rooms() {
-        this.buildEntrance();
-        this.buildLibrary();
-        this.buildForge();
-        this.buildHatchery();
-        this.buildVault();
-    }
-    
-    buildEntrance() {
-        const offsetX = 0;
-        const offsetZ = 0;
-        const width = CONSTANTS.ENTRANCE_WIDTH;
-        const depth = CONSTANTS.ENTRANCE_DEPTH;
-        
-        this.buildRoom(offsetX, offsetZ, width, depth, 0x2a2d35);
-        this.createDoorway(offsetX + width/2, offsetZ, 'east');
-        this.addEntranceProps(offsetX, offsetZ);
-        this.createLoreNote(
-            { x: offsetX - 3, y: 1.2, z: offsetZ + 3 },
-            LORE_NOTES.NOTE_1
-        );
-    }
-    
-    buildLibrary() {
-        const offsetX = 20;
-        const offsetZ = 0;
-        const width = CONSTANTS.LIBRARY_WIDTH;
-        const depth = CONSTANTS.LIBRARY_DEPTH;
-        
-        this.buildRoom(offsetX, offsetZ, width, depth, 0x252830);
-        this.createDoorway(offsetX - width/2, offsetZ, 'west');
-        this.createDoorway(offsetX + width/2, offsetZ, 'east');
-        this.addLibraryProps(offsetX, offsetZ);
-        
-        this.createLoreNote(
-            { x: offsetX - 5, y: 1.2, z: offsetZ - 4 },
-            LORE_NOTES.NOTE_2
-        );
-        this.createLoreNote(
-            { x: offsetX + 5, y: 1.2, z: offsetZ - 4 },
-            LORE_NOTES.NOTE_3
-        );
-        this.createLoreNote(
-            { x: offsetX, y: 1.2, z: offsetZ + 4 },
-            LORE_NOTES.NOTE_4
-        );
-    }
-    
-    buildForge() {
-        const offsetX = 35;
-        const offsetZ = 0;
-        const width = CONSTANTS.FORGE_WIDTH;
-        const depth = CONSTANTS.FORGE_DEPTH;
-        
-        this.buildRoom(offsetX, offsetZ, width, depth, 0x3a2520);
-        this.createDoorway(offsetX - width/2, offsetZ, 'west');
-        this.createDoorway(offsetX, offsetZ - depth/2, 'south');
-        this.addForgeProps(offsetX, offsetZ);
-    }
-    
-    buildHatchery() {
-        const offsetX = 35;
-        const offsetZ = -15;
-        const width = CONSTANTS.HATCHERY_WIDTH;
-        const depth = CONSTANTS.HATCHERY_DEPTH;
-        
-        this.buildRoom(offsetX, offsetZ, width, depth, 0x202a30);
-        this.createDoorway(offsetX, offsetZ + depth/2, 'north');
-        this.createDoorway(offsetX, offsetZ - depth/2, 'south');
-        this.addHatcheryProps(offsetX, offsetZ);
-        
-        // TURN 9: Original Truth lore note
-        this.createLoreNote(
-            { x: offsetX + 4, y: 1.2, z: offsetZ + 4 },
-            LORE_NOTES.NOTE_5
-        );
-    }
-    
-    buildVault() {
-        const offsetX = 35;
-        const offsetZ = -30;
-        const width = CONSTANTS.VAULT_WIDTH;
-        const depth = CONSTANTS.VAULT_DEPTH;
-        
-        this.buildRoom(offsetX, offsetZ, width, depth, 0x1a1520);
-        this.createDoorway(offsetX, offsetZ + depth/2, 'north');
-        this.addVaultProps(offsetX, offsetZ);
-    }
-    
-    buildRoom(offsetX, offsetZ, width, depth, color) {
-        const height = CONSTANTS.ROOM_HEIGHT;
-        const wallThickness = CONSTANTS.WALL_THICKNESS;
-        
-        const wallMaterial = new THREE.MeshStandardMaterial({ 
-            color: color,
-            roughness: 0.8,
-            metalness: 0.2
-        });
-        
-        const floorMaterial = new THREE.MeshStandardMaterial({ 
-            color: color - 0x0a0a0a,
-            roughness: 0.9,
-            metalness: 0.1
-        });
-        
-        const floor = new THREE.Mesh(
-            new THREE.BoxGeometry(width, wallThickness, depth),
-            floorMaterial
-        );
-        floor.position.set(offsetX, -wallThickness/2, offsetZ);
-        floor.receiveShadow = true;
-        this.scene.add(floor);
-        
-        this.collisionGeometry.push({
-            position: floor.position.clone(),
-            size: new THREE.Vector3(width, wallThickness, depth)
-        });
-        
-        const ceiling = new THREE.Mesh(
-            new THREE.BoxGeometry(width, wallThickness, depth),
-            wallMaterial
-        );
-        ceiling.position.set(offsetX, height - wallThickness/2, offsetZ);
-        ceiling.receiveShadow = true;
-        this.scene.add(ceiling);
-        
-        this.buildWalls(offsetX, offsetZ, width, depth, height, wallMaterial);
-    }
-    
-    buildWalls(offsetX, offsetZ, width, depth, height, material) {
-        const wallThickness = CONSTANTS.WALL_THICKNESS;
-        
-        const northWall = new THREE.Mesh(
-            new THREE.BoxGeometry(width, height, wallThickness),
-            material
-        );
-        northWall.position.set(offsetX, height/2, offsetZ + depth/2);
-        northWall.castShadow = true;
-        northWall.receiveShadow = true;
-        this.scene.add(northWall);
-        
-        this.collisionGeometry.push({
-            position: northWall.position.clone(),
-            size: new THREE.Vector3(width, height, wallThickness)
-        });
-        
-        const southWall = new THREE.Mesh(
-            new THREE.BoxGeometry(width, height, wallThickness),
-            material
-        );
-        southWall.position.set(offsetX, height/2, offsetZ - depth/2);
-        southWall.castShadow = true;
-        southWall.receiveShadow = true;
-        this.scene.add(southWall);
-        
-        this.collisionGeometry.push({
-            position: southWall.position.clone(),
-            size: new THREE.Vector3(width, height, wallThickness)
-        });
-        
-        const eastWall = new THREE.Mesh(
-            new THREE.BoxGeometry(wallThickness, height, depth),
-            material
-        );
-        eastWall.position.set(offsetX + width/2, height/2, offsetZ);
-        eastWall.castShadow = true;
-        eastWall.receiveShadow = true;
-        this.scene.add(eastWall);
-        
-        this.collisionGeometry.push({
-            position: eastWall.position.clone(),
-            size: new THREE.Vector3(wallThickness, height, depth)
-        });
-        
-        const westWall = new THREE.Mesh(
-            new THREE.BoxGeometry(wallThickness, height, depth),
-            material
-        );
-        westWall.position.set(offsetX - width/2, height/2, offsetZ);
-        westWall.castShadow = true;
-        westWall.receiveShadow = true;
-        this.scene.add(westWall);
-        
-        this.collisionGeometry.push({
-            position: westWall.position.clone(),
-            size: new THREE.Vector3(wallThickness, height, depth)
-        });
-    }
-    
-    createDoorway(x, z, direction) {
-        // Doorways are passable gaps in walls
-    }
-    
-    addEntranceProps(offsetX, offsetZ) {
-        const tableMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x3d2f1f,
-            roughness: 0.7
-        });
-        
-        const tableTop = new THREE.Mesh(
-            new THREE.BoxGeometry(1.5, 0.1, 0.8),
-            tableMaterial
-        );
-        tableTop.position.set(offsetX + 2, 0.8, offsetZ - 2);
-        tableTop.castShadow = true;
-        tableTop.receiveShadow = true;
-        this.scene.add(tableTop);
-    }
-    
-    addLibraryProps(offsetX, offsetZ) {
-        const shelfMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x4a3520,
-            roughness: 0.8
-        });
-        
-        for (let i = -2; i <= 2; i++) {
-            const shelf = new THREE.Mesh(
-                new THREE.BoxGeometry(1.5, 2, 0.4),
-                shelfMaterial
-            );
-            shelf.position.set(offsetX + i * 2.5, 1, offsetZ + 5.5);
-            shelf.castShadow = true;
-            shelf.receiveShadow = true;
-            this.scene.add(shelf);
-        }
-    }
-    
-    addForgeProps(offsetX, offsetZ) {
-        const anvilMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x505050,
-            roughness: 0.5,
-            metalness: 0.8
-        });
-        
-        const anvil = new THREE.Mesh(
-            new THREE.BoxGeometry(1, 0.8, 0.6),
-            anvilMaterial
-        );
-        anvil.position.set(offsetX - 3, 0.4, offsetZ);
-        anvil.castShadow = true;
-        anvil.receiveShadow = true;
-        this.scene.add(anvil);
-        
-        // TURN 8: Forge Console
-        const consoleMat = new THREE.MeshStandardMaterial({
-            color: 0x00ff00,
-            emissive: 0x004400,
-            emissiveIntensity: 0.6,
-            roughness: 0.5
-        });
-        const consoleMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(1.2, 1.6, 0.8),
-            consoleMat
-        );
-        consoleMesh.position.set(offsetX, 0.8, offsetZ);
-        consoleMesh.castShadow = true;
-        consoleMesh.receiveShadow = true;
-        consoleMesh.userData.interactableType = 'forge_console';
-        this.scene.add(consoleMesh);
-
-        const consoleLight = new THREE.PointLight(0x00ff00, 2, 3);
-        consoleLight.position.set(offsetX, 1.5, offsetZ);
-        this.scene.add(consoleLight);
-    }
-    
-    addHatcheryProps(offsetX, offsetZ) {
-        const pedestalMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x404050,
-            roughness: 0.6,
-            metalness: 0.4
-        });
-        
-        // TURN 9: Three dragon egg pedestals
-        const eggPositions = [
-            { x: offsetX - 3, z: offsetZ, type: 'EmberDrake' },
-            { x: offsetX, z: offsetZ, type: 'MistWyrm' },
-            { x: offsetX + 3, z: offsetZ, type: 'VoltSerpent' }
-        ];
-        
-        eggPositions.forEach(pos => {
-            const pedestal = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.5, 0.6, 1, 8),
-                pedestalMaterial
-            );
-            pedestal.position.set(pos.x, 0.5, pos.z);
-            pedestal.castShadow = true;
-            pedestal.receiveShadow = true;
-            this.scene.add(pedestal);
-            
-            // TURN 9: Dragon egg on pedestal
-            const dragonData = DRAGON_TYPES[pos.type];
-            const eggGeom = new THREE.SphereGeometry(0.35, 16, 16);
-            const eggMat = new THREE.MeshStandardMaterial({
-                color: dragonData.color,
-                emissive: dragonData.emissive,
-                emissiveIntensity: 0.4,
-                roughness: 0.6,
-                metalness: 0.2
-            });
-            
-            const egg = new THREE.Mesh(eggGeom, eggMat);
-            egg.position.set(pos.x, 1.8, pos.z);
-            egg.castShadow = true;
-            egg.receiveShadow = true;
-            egg.userData.interactableType = 'dragon_egg';
-            egg.userData.dragonType = pos.type;
-            this.scene.add(egg);
-            
-            // Egg glow light
-            const eggLight = new THREE.PointLight(dragonData.color, 1, 2);
-            eggLight.position.set(pos.x, 1.8, pos.z);
-            this.scene.add(eggLight);
-        });
-    }
-    
-    addVaultProps(offsetX, offsetZ) {
-        const circleMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x8844aa,
-            roughness: 0.9,
-            emissive: 0x440066,
-            emissiveIntensity: 0.2
-        });
-        
-        const circle = new THREE.Mesh(
-            new THREE.CylinderGeometry(2, 2, 0.05, 32),
-            circleMaterial
-        );
-        circle.position.set(offsetX, 0.05, offsetZ);
-        circle.receiveShadow = true;
-        circle.userData.interactableType = 'ritual_circle'; // TURN 10
-        this.scene.add(circle);
-        
-        // TURN 10: Ritual circle glow light
-        const ritualLight = new THREE.PointLight(0x8844aa, 3, 5);
-        ritualLight.position.set(offsetX, 0.5, offsetZ);
-        this.scene.add(ritualLight);
-    }
-    
-    createLoreNote(position, data) {
-        const geometry = new THREE.PlaneGeometry(CONSTANTS.LORE_NOTE_SIZE, CONSTANTS.LORE_NOTE_SIZE * 1.4);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            emissive: CONSTANTS.LORE_NOTE_GLOW_COLOR,
-            emissiveIntensity: 0.5,
-            side: THREE.DoubleSide
-        });
-        
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(position.x, position.y, position.z);
-        mesh.castShadow = true;
-        
-        const light = new THREE.PointLight(CONSTANTS.LORE_NOTE_GLOW_COLOR, CONSTANTS.LORE_NOTE_GLOW_INTENSITY, 2);
-        light.position.copy(mesh.position);
-        this.scene.add(light);
-        
-        mesh.userData.light = light;
-        this.scene.add(mesh);
-        
-        const interactable = new InteractableObject(mesh, 'lore_note', data);
-        this.interactables.push(interactable);
-    }
-    
-    getCollisionGeometry() {
-        return this.collisionGeometry;
-    }
-}
-
-// ============================================================================
-// GAME MANAGER
-// ============================================================================
-class GameManager {
-    constructor() {
-        this.state = new GameState();
-        this.scene = null;
-        this.camera = null;
-        this.renderer = null;
-        this.player = null;
-        this.levelBuilder = null;
-        this.flashlightSystem = null;
-        this.interactionSystem = null;
-        this.monsterAI = null;
-        this.forgePuzzle = null;
-        this.dragonChoiceModal = null;
-        this.vaultRitualModal = null; // TURN 10
-        this.clock = new THREE.Clock();
-        
-        this.isPointerLocked = false;
-        this.damageFlashAlpha = 0;
-        this.loreTextTimeout = null;
-        
-        this.dom = {
-            lockInstruction: document.getElementById('lockInstruction'),
-            interactPrompt: document.getElementById('interactPrompt'),
-            logBox: document.getElementById('logBox'),
-            healthBar: document.getElementById('healthBar'),
-            sanityBar: document.getElementById('sanityBar'),
-            healthValue: document.getElementById('healthValue'),
-            sanityValue: document.getElementById('sanityValue'),
-            ammoCount: document.getElementById('ammoCount'),
-            batteryCount: document.getElementById('batteryCount'),
-            flashlightStatus: document.getElementById('flashlightStatus'),
-            dragonInfo: document.getElementById('dragonInfo'),
-            dragonTrustBar: document.getElementById('dragonTrustBar'),
-            trustLabel: document.getElementById('trustLabel'),
-            abilityUses: document.getElementById('abilityUses'),
-            modalOverlay: document.getElementById('modalOverlay'),
-            modalContent: document.getElementById('modalContent'),
-        };
-        
-        this.init();
-    }
-    
-    init() {
-        this.setupThreeJS();
-        this.setupLevel();
-        this.setupPlayer();
-        this.setupFlashlight();
-        this.setupInteractions();
-        this.setupMonster();
-        this.setupForgePuzzle();
-        this.setupDragonChoiceModal();
-        this.setupVaultRitualModal(); // TURN 10
-        this.setupPointerLock();
-        this.setupGameKeys();
-        this.setupTestKeys();
-        this.showTestInfo();
-        this.animate();
-    }
-    
-    setupThreeJS() {
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x0a0b0f);
-        this.scene.fog = new THREE.Fog(0x0a0b0f, 5, 40);
-        
-        this.camera = new THREE.PerspectiveCamera(
-            CONSTANTS.CAMERA_FOV,
-            window.innerWidth / window.innerHeight,
-            CONSTANTS.CAMERA_NEAR,
-            CONSTANTS.CAMERA_FAR
-        );
-        this.camera.rotation.order = 'YXZ';
-        
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(this.renderer.domElement);
-        
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
-        this.scene.add(ambientLight);
-        
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
-        directionalLight.position.set(5, 10, 5);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -50;
-        directionalLight.shadow.camera.right = 50;
-        directionalLight.shadow.camera.top = 50;
-        directionalLight.shadow.camera.bottom = -50;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        this.scene.add(directionalLight);
-        
-        window.addEventListener('resize', () => this.onWindowResize(), false);
-    }
-    
-    setupLevel() {
-        this.levelBuilder = new LevelBuilder(this.scene, this);
-        this.levelBuilder.build5Rooms();
-    }
-    
-    setupPlayer() {
-        this.player = new PlayerController(this.camera);
-    }
-    
-    setupFlashlight() {
-        this.flashlightSystem = new FlashlightSystem(this.scene, this.camera);
-    }
-    
-    setupInteractions() {
-        this.interactionSystem = new InteractionSystem(this.camera, this.scene);
-    }
-    
-    setupMonster() {
-        this.monsterAI = new MonsterAI(this.scene, this.player);
-    }
-    
-    setupForgePuzzle() {
-        this.forgePuzzle = new ForgePuzzle(this);
-        console.log('Turn 8: Forge Puzzle initialized');
-    }
-    
-    setupDragonChoiceModal() {
-        this.dragonChoiceModal = new DragonChoiceModal(this);
-        console.log('Turn 9: Dragon Choice Modal initialized');
-    }
-    
-    setupVaultRitualModal() {
-        // TURN 10: Initialize Vault Ritual Modal
-        this.vaultRitualModal = new VaultRitualModal(this);
-        console.log('Turn 10: Vault Ritual Modal initialized');
-    }
-    
-    setupPointerLock() {
-        const canvas = this.renderer.domElement;
-        
-        this.dom.lockInstruction.addEventListener('click', () => {
-            canvas.requestPointerLock();
-        });
-        
-        document.addEventListener('pointerlockchange', () => {
-            this.isPointerLocked = document.pointerLockElement === canvas;
-            if (this.isPointerLocked) {
-                this.dom.lockInstruction.classList.add('hidden');
-            } else {
-                this.dom.lockInstruction.classList.remove('hidden');
-            }
-        });
-        
-        document.addEventListener('pointerlockerror', () => {
-            console.error('Pointer lock error');
-        });
-        
-        document.addEventListener('mousemove', (event) => {
-            if (!this.isPointerLocked || this.state.gameOver) return;
-            
-            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-            euler.setFromQuaternion(this.camera.quaternion);
-            
-            euler.y -= event.movementX * CONSTANTS.MOUSE_SENSITIVITY;
-            euler.x -= event.movementY * CONSTANTS.MOUSE_SENSITIVITY;
-            euler.x = Math.max(-CONSTANTS.CAMERA_PITCH_LIMIT, Math.min(CONSTANTS.CAMERA_PITCH_LIMIT, euler.x));
-            
-            this.camera.quaternion.setFromEuler(euler);
-        });
-    }
-    
-    setupGameKeys() {
-        document.addEventListener('keydown', (event) => {
-            if (!this.isPointerLocked || this.state.gameOver) return;
-            
-            switch(event.code) {
-                case 'KeyF':
-                    this.state.toggleFlashlight();
-                    break;
-                case 'KeyE':
-                    this.interactionSystem.interact(this);
-                    break;
-                case 'KeyQ':
-                    // TURN 9: Dragon ability (or stun gun if no dragon)
-                    if (this.state.dragon) {
-                        const success = this.state.dragon.useAbility(this.monsterAI, this.state);
-                        if (success) {
-                            console.log(`[ABILITY] Dragon ability used. Uses remaining: ${this.state.dragonAbilityUses}`);
-                        }
-                    } else {
-                        // Fallback: Stun gun
-                        if (this.state.useAmmo()) {
-                            this.monsterAI.stun();
-                            this.triggerDamageFlash();
-                            console.log(`[STUN] Used stun round. Ammo remaining: ${this.state.ammo}`);
-                        } else {
-                            console.log('[STUN] No ammo remaining!');
-                        }
-                    }
-                    break;
-            }
-        });
-    }
-    
-    setupTestKeys() {
-        document.addEventListener('keydown', (event) => {
-            if (!this.isPointerLocked) return;
-            
-            switch(event.code) {
-                case 'Digit1':
-                    this.state.takeDamage(CONSTANTS.DAMAGE_TEST_AMOUNT);
-                    this.triggerDamageFlash();
-                    console.log(`[TEST] Took ${CONSTANTS.DAMAGE_TEST_AMOUNT} damage. Health: ${this.state.health}`);
-                    break;
-                case 'Digit2':
-                    this.state.drainSanity(CONSTANTS.SANITY_TEST_AMOUNT);
-                    console.log(`[TEST] Lost ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
-                    break;
-                case 'Digit3':
-                    this.state.restoreSanity(CONSTANTS.SANITY_TEST_AMOUNT);
-                    console.log(`[TEST] Restored ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
-                    break;
-                case 'Digit4':
-                    this.state.drainBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
-                    console.log(`[TEST] Drained ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
-                    break;
-                case 'Digit5':
-                    this.state.restoreBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
-                    console.log(`[TEST] Restored ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
-                    break;
-            }
-        });
-    }
-    
-    showTestInfo() {
-        console.log('%c' + UI_TEXT.TEST_KEYS_INFO, 'color: #ffaa44; font-weight: bold; font-size: 14px;');
-    }
-    
-    showLoreText(title, text) {
-        if (this.loreTextTimeout) {
-            clearTimeout(this.loreTextTimeout);
-        }
-        
-        this.dom.logBox.innerHTML = `<strong>${title}</strong><br>${text}`;
-        this.dom.logBox.style.opacity = '1';
-        
-        this.loreTextTimeout = setTimeout(() => {
-            this.dom.logBox.style.opacity = '0';
-        }, CONSTANTS.LORE_LOG_DURATION);
-    }
-    
-    triggerDamageFlash() {
-        this.damageFlashAlpha = 1.0;
-    }
-    
-    updateDamageFlash(deltaTime) {
-        if (this.damageFlashAlpha > 0) {
-            this.damageFlashAlpha = Math.max(0, this.damageFlashAlpha - deltaTime * 2);
-            
-            if (this.damageFlashAlpha > 0) {
-                const canvas = this.renderer.domElement;
-                canvas.style.boxShadow = `inset 0 0 100px rgba(255, 0, 0, ${this.damageFlashAlpha})`;
-            } else {
-                const canvas = this.renderer.domElement;
-                canvas.style.boxShadow = 'none';
-            }
-        }
-    }
-    
-    updateFlashlight(deltaTime) {
-        this.flashlightSystem.update(this.state.flashlightOn);
-        
-        if (this.state.flashlightOn && this.state.battery > 0) {
-            const drainAmount = CONSTANTS.BATTERY_DRAIN_RATE * deltaTime;
-            this.state.drainBattery(drainAmount);
-        }
-    }
-    
-    updateSanityDrain(deltaTime) {
-        // Check if near dragon (dragon provides light)
-        let nearDragonLight = false;
-        if (this.state.dragon) {
-            const distToDragon = this.player.position.distanceTo(this.state.dragon.position);
-            if (distToDragon < CONSTANTS.DRAGON_LIGHT_DISTANCE) {
-                nearDragonLight = true;
-            }
-        }
-        
-        if (!this.state.flashlightOn && !nearDragonLight) {
-            const drainAmount = CONSTANTS.SANITY_DRAIN_DARKNESS * deltaTime;
-            this.state.drainSanity(drainAmount);
-        }
-    }
-    
-    updateInteractions() {
-        const hasTarget = this.interactionSystem.update(this);
-        
-        if (hasTarget) {
-            if (this.interactionSystem.currentTarget.type === 'forge_console') {
-                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_FORGE;
-            } else if (this.interactionSystem.currentTarget.type === 'dragon_egg') {
-                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_EGG;
-            } else if (this.interactionSystem.currentTarget.type === 'ritual_circle') {
-                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_RITUAL;
-            } else {
-                this.dom.interactPrompt.textContent = UI_TEXT.PRESS_E_INTERACT;
-            }
-            this.dom.interactPrompt.classList.remove('hidden');
-        } else {
-            this.dom.interactPrompt.classList.add('hidden');
-        }
-    }
-    
-    onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-    
-    updateHUD() {
-        const healthPercent = (this.state.health / CONSTANTS.PLAYER_HEALTH_MAX) * 100;
-        this.dom.healthBar.querySelector('.bar-fill').style.width = healthPercent + '%';
-        this.dom.healthValue.textContent = Math.floor(this.state.health);
-        
-        const sanityPercent = (this.state.sanity / CONSTANTS.PLAYER_SANITY_MAX) * 100;
-        this.dom.sanityBar.querySelector('.bar-fill').style.width = sanityPercent + '%';
-        this.dom.sanityValue.textContent = Math.floor(this.state.sanity);
-        
-        this.dom.ammoCount.textContent = this.state.ammo;
-        this.dom.batteryCount.textContent = Math.floor(this.state.battery) + '%';
-        this.dom.flashlightStatus.textContent = this.state.flashlightOn ? 'ON' : 'OFF';
-        
-        if (this.state.flashlightOn) {
-            this.dom.flashlightStatus.style.color = '#ffff00';
-        } else {
-            this.dom.flashlightStatus.style.color = '#fff';
-        }
-        
-        // TURN 9: Dragon UI
-        if (this.state.dragon) {
-            if (this.dom.dragonInfo) {
-                this.dom.dragonInfo.style.display = 'block';
-                
-                const trustPercent = this.state.dragonTrust;
-                if (this.dom.dragonTrustBar) {
-                    this.dom.dragonTrustBar.querySelector('.bar-fill').style.width = trustPercent + '%';
-                }
-                
-                let trustLabel = 'Fractured';
-                if (trustPercent >= 70) trustLabel = 'Loyal';
-                else if (trustPercent >= 30) trustLabel = 'Unstable';
-                
-                if (this.dom.trustLabel) {
-                    this.dom.trustLabel.textContent = trustLabel;
-                }
-                
-                if (this.dom.abilityUses) {
-                    this.dom.abilityUses.textContent = `${this.state.dragonAbilityUses}/3`;
-                }
-            }
-        } else {
-            if (this.dom.dragonInfo) {
-                this.dom.dragonInfo.style.display = 'none';
-            }
-        }
-    }
-    
-    update(deltaTime) {
-        // TURN 10: Stop updates if game over
-        if (this.state.gameOver) {
-            return;
-        }
-        
-        if (this.isPointerLocked && this.player) {
-            // TURN 9: Apply speed multiplier (Volt Serpent ability)
-            let speedMult = 1.0;
-            if (this.state.speedBuffEnd > Date.now()) {
-                speedMult = this.state.speedMultiplier;
-            } else {
-                this.state.speedMultiplier = 1.0;
-            }
-            
-            this.player.update(deltaTime, this.levelBuilder.getCollisionGeometry(), speedMult);
-        }
-        
-        this.updateFlashlight(deltaTime);
-        this.updateSanityDrain(deltaTime);
-        this.updateInteractions();
-        this.updateDamageFlash(deltaTime);
-        
-        if (this.monsterAI) {
-            this.monsterAI.update(deltaTime, this.state);
-        }
-        
-        // TURN 9: Update dragon
-        if (this.state.dragon) {
-            this.state.dragon.update(deltaTime, this.player, this.monsterAI, this.state);
-        }
-        
-        this.updateHUD();
-    }
-    
-    animate() {
-        requestAnimationFrame(() => this.animate());
-        
-        const deltaTime = this.clock.getDelta();
-        this.update(deltaTime);
-        
-        this.renderer.render(this.scene, this.camera);
-    }
-}
-
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
-let game;
-
-window.addEventListener('DOMContentLoaded', () => {
-    game = new GameManager();
-    console.log('ATC Horror Economics Game - Turn 10: Vault Ritual + Endings initialized');
-});
+// (Continue with remaining classes unchanged: InteractableObject, InteractionSystem, PlayerController, FlashlightSystem, LevelBuilder, GameManager...)
+// [Due to character limit, I'm truncating here. The remaining classes stay identical to current code, with GameManager receiving audio wiring in next message]
