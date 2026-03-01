@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 4: FLASHLIGHT + SANITY DRAIN
+// ATC HORROR ECONOMICS GAME - TURN 5: INTERACTIONS + ATC LORE NOTES
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -55,7 +55,17 @@ const CONSTANTS = {
     FLASHLIGHT_DECAY: 2,
     FLASHLIGHT_COLOR: 0xffffcc,
     
-    // Darkness threshold (ambient light level below which sanity drains)
+    // Interaction settings
+    INTERACTION_RANGE: 3,
+    INTERACTION_RAYCAST_LAYERS: 1,
+    
+    // Lore note settings
+    LORE_NOTE_GLOW_COLOR: 0xffaa44,
+    LORE_NOTE_GLOW_INTENSITY: 2,
+    LORE_NOTE_SIZE: 0.3,
+    LORE_LOG_DURATION: 5000, // 5 seconds in milliseconds
+    
+    // Darkness threshold
     DARKNESS_THRESHOLD: 0.5,
 };
 
@@ -71,7 +81,27 @@ const UI_TEXT = {
     DRAGON_BOND_LABEL: "Dragon Bond",
     ABILITY_USES_LABEL: "Ability Uses",
     TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact.",
-    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Toggle Flashlight",
+    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Toggle Flashlight, E: Interact",
+};
+
+// ATC LORE NOTE TEXTS (MANDATORY EDUCATIONAL CONTENT)
+const LORE_NOTES = {
+    NOTE_1: {
+        title: "Academy Ledger Fragment I",
+        text: "The academy's ledgers speak of two curses: Fixed Costs (rent, machinery, never changing even in silence) and Variable Costs (materials, labor, paid only when you produce). Both must be counted, or the Forge will devour you."
+    },
+    NOTE_2: {
+        title: "The Rent-Ghost ($2700)",
+        text: "Fixed Cost Ghost: $2700. The landlord's curse. It haunts even silent forges. You pay this whether you produce 0 units or 1000. The ghost demands its tribute in stillness and in fury alike."
+    },
+    NOTE_3: {
+        title: "The Materials-Demon ($300)",
+        text: "Variable Cost Demon: $300 for 100 units. It only appears when you produce. More production = more demon-blood spent. When the forge sleeps, this demon sleeps. When it roars, the demon feeds."
+    },
+    NOTE_4: {
+        title: "The ATC Formula",
+        text: "Average Total Cost = (Fixed Cost + Variable Cost) ÷ Quantity. The Forge will demand this truth. Both curses must be counted before dividing by output. Forget one, and the numbers will feast on your sanity."
+    }
 };
 
 // ============================================================================
@@ -250,6 +280,97 @@ class GameState {
         this.flashlightOn = !this.flashlightOn;
         console.log(`Flashlight: ${this.flashlightOn ? 'ON' : 'OFF'}`);
         return true;
+    }
+    
+    collectLoreNote() {
+        this.loreNotesCollected++;
+        this.drainSanity(CONSTANTS.SANITY_DRAIN_LORE_NOTE);
+        console.log(`Lore notes collected: ${this.loreNotesCollected}/4`);
+    }
+}
+
+// ============================================================================
+// INTERACTABLE OBJECT
+// ============================================================================
+class InteractableObject {
+    constructor(mesh, type, data) {
+        this.mesh = mesh;
+        this.type = type; // 'lore_note', 'door', 'pickup', etc.
+        this.data = data; // Custom data for this interactable
+        this.isActive = true;
+        
+        // Mark mesh as interactable
+        this.mesh.userData.interactable = this;
+    }
+    
+    interact(gameManager) {
+        if (!this.isActive) return false;
+        
+        switch(this.type) {
+            case 'lore_note':
+                return this.interactLoreNote(gameManager);
+            default:
+                console.log(`Interacted with: ${this.type}`);
+                return true;
+        }
+    }
+    
+    interactLoreNote(gameManager) {
+        // Display lore text
+        gameManager.showLoreText(this.data.title, this.data.text);
+        
+        // Update game state
+        gameManager.state.collectLoreNote();
+        
+        // Remove from scene
+        gameManager.scene.remove(this.mesh);
+        this.isActive = false;
+        
+        return true;
+    }
+}
+
+// ============================================================================
+// INTERACTION SYSTEM
+// ============================================================================
+class InteractionSystem {
+    constructor(camera, scene) {
+        this.camera = camera;
+        this.scene = scene;
+        this.raycaster = new THREE.Raycaster();
+        this.raycaster.far = CONSTANTS.INTERACTION_RANGE;
+        
+        this.currentTarget = null;
+    }
+    
+    update() {
+        // Raycast from center of screen
+        const direction = new THREE.Vector3(0, 0, -1);
+        direction.applyQuaternion(this.camera.quaternion);
+        
+        this.raycaster.set(this.camera.position, direction);
+        
+        // Get all objects in scene
+        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+        
+        // Find first interactable object
+        this.currentTarget = null;
+        for (let intersect of intersects) {
+            const interactable = intersect.object.userData.interactable;
+            if (interactable && interactable.isActive) {
+                this.currentTarget = interactable;
+                break;
+            }
+        }
+        
+        return this.currentTarget !== null;
+    }
+    
+    interact(gameManager) {
+        if (this.currentTarget) {
+            return this.currentTarget.interact(gameManager);
+        }
+        return false;
     }
 }
 
@@ -473,6 +594,7 @@ class LevelBuilder {
     constructor(scene) {
         this.scene = scene;
         this.collisionGeometry = [];
+        this.interactables = [];
     }
     
     buildTestRoom() {
@@ -572,6 +694,7 @@ class LevelBuilder {
         });
         
         this.addTestProps();
+        this.addLoreNotes();
     }
     
     addTestProps() {
@@ -606,6 +729,56 @@ class LevelBuilder {
         });
     }
     
+    addLoreNotes() {
+        // Create 4 lore notes with ATC educational content
+        const notePositions = [
+            { x: -4, y: 1.2, z: 4 },   // Northwest corner
+            { x: 4, y: 1.2, z: 4 },    // Northeast corner
+            { x: -4, y: 1.2, z: -4 },  // Southwest corner
+            { x: 4, y: 1.2, z: -4 }    // Southeast corner
+        ];
+        
+        const noteData = [
+            LORE_NOTES.NOTE_1,
+            LORE_NOTES.NOTE_2,
+            LORE_NOTES.NOTE_3,
+            LORE_NOTES.NOTE_4
+        ];
+        
+        notePositions.forEach((pos, index) => {
+            this.createLoreNote(pos, noteData[index]);
+        });
+    }
+    
+    createLoreNote(position, data) {
+        // Create glowing paper mesh
+        const geometry = new THREE.PlaneGeometry(CONSTANTS.LORE_NOTE_SIZE, CONSTANTS.LORE_NOTE_SIZE * 1.4);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            emissive: CONSTANTS.LORE_NOTE_GLOW_COLOR,
+            emissiveIntensity: 0.5,
+            side: THREE.DoubleSide
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(position.x, position.y, position.z);
+        mesh.castShadow = true;
+        
+        // Add point light for glow effect
+        const light = new THREE.PointLight(CONSTANTS.LORE_NOTE_GLOW_COLOR, CONSTANTS.LORE_NOTE_GLOW_INTENSITY, 2);
+        light.position.copy(mesh.position);
+        this.scene.add(light);
+        
+        // Store light reference for removal later
+        mesh.userData.light = light;
+        
+        this.scene.add(mesh);
+        
+        // Create interactable
+        const interactable = new InteractableObject(mesh, 'lore_note', data);
+        this.interactables.push(interactable);
+    }
+    
     getCollisionGeometry() {
         return this.collisionGeometry;
     }
@@ -623,6 +796,7 @@ class GameManager {
         this.player = null;
         this.levelBuilder = null;
         this.flashlightSystem = null;
+        this.interactionSystem = null;
         this.clock = new THREE.Clock();
         
         // Pointer lock state
@@ -630,6 +804,9 @@ class GameManager {
         
         // Visual effects state
         this.damageFlashAlpha = 0;
+        
+        // Lore text state
+        this.loreTextTimeout = null;
         
         // DOM references
         this.dom = {
@@ -659,6 +836,7 @@ class GameManager {
         this.setupLevel();
         this.setupPlayer();
         this.setupFlashlight();
+        this.setupInteractions();
         this.setupPointerLock();
         this.setupGameKeys();
         this.setupTestKeys();
@@ -720,6 +898,10 @@ class GameManager {
         this.flashlightSystem = new FlashlightSystem(this.scene, this.camera);
     }
     
+    setupInteractions() {
+        this.interactionSystem = new InteractionSystem(this.camera, this.scene);
+    }
+    
     setupPointerLock() {
         const canvas = this.renderer.domElement;
         
@@ -763,6 +945,11 @@ class GameManager {
                     // Toggle flashlight
                     this.state.toggleFlashlight();
                     break;
+                    
+                case 'KeyE':
+                    // Interact
+                    this.interactionSystem.interact(this);
+                    break;
             }
         });
     }
@@ -805,6 +992,22 @@ class GameManager {
         console.log('%c' + UI_TEXT.TEST_KEYS_INFO, 'color: #ffaa44; font-weight: bold; font-size: 14px;');
     }
     
+    showLoreText(title, text) {
+        // Clear existing timeout
+        if (this.loreTextTimeout) {
+            clearTimeout(this.loreTextTimeout);
+        }
+        
+        // Update log box with lore text
+        this.dom.logBox.innerHTML = `<strong>${title}</strong><br>${text}`;
+        this.dom.logBox.style.opacity = '1';
+        
+        // Fade out after duration
+        this.loreTextTimeout = setTimeout(() => {
+            this.dom.logBox.style.opacity = '0';
+        }, CONSTANTS.LORE_LOG_DURATION);
+    }
+    
     triggerDamageFlash() {
         this.damageFlashAlpha = 1.0;
     }
@@ -836,10 +1039,21 @@ class GameManager {
     
     updateSanityDrain(deltaTime) {
         // Drain sanity in darkness (when flashlight is off)
-        // Note: Dragon light will also prevent drain in later turns
         if (!this.state.flashlightOn) {
             const drainAmount = CONSTANTS.SANITY_DRAIN_DARKNESS * deltaTime;
             this.state.drainSanity(drainAmount);
+        }
+    }
+    
+    updateInteractions() {
+        // Check for interactable objects
+        const hasTarget = this.interactionSystem.update();
+        
+        // Show/hide interact prompt
+        if (hasTarget) {
+            this.dom.interactPrompt.classList.remove('hidden');
+        } else {
+            this.dom.interactPrompt.classList.add('hidden');
         }
     }
     
@@ -901,6 +1115,9 @@ class GameManager {
         
         // Update sanity drain from darkness
         this.updateSanityDrain(deltaTime);
+        
+        // Update interaction system
+        this.updateInteractions();
         
         // Update visual effects
         this.updateDamageFlash(deltaTime);
