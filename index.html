@@ -176,6 +176,78 @@
         </div>
     </div>
 
+    <!-- TURN 10: Vault Ritual Modal -->
+    <div id="vaultRitualModal" class="vault-modal-overlay hidden">
+        <div class="vault-modal-content">
+            <h2>⭕ THE VAULT RITUAL ⭕</h2>
+            <p class="vault-intro">You stand at the ritual circle. Your dragon companion senses the ancient power emanating from the symbols.</p>
+            <p class="vault-warning">⚠️ <strong>WARNING:</strong> Once you begin the ritual, there is no turning back. Your choices will determine your fate.</p>
+            
+            <div class="ritual-status">
+                <p><strong>Dragon Companion:</strong> Ready</p>
+                <p><strong>Ritual Circle:</strong> Active</p>
+                <p><strong>Your Resolve:</strong> Tested</p>
+            </div>
+
+            <div class="ritual-buttons">
+                <button id="beginRitualBtn" class="ritual-btn begin">BEGIN THE RITUAL</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TURN 10: Ending Screen Modal -->
+    <div id="endingModal" class="ending-modal-overlay hidden">
+        <div class="ending-modal-content">
+            <h1 id="endingTitle" class="ending-title">ENDING</h1>
+            <h2 id="endingSubtitle" class="ending-subtitle"></h2>
+            
+            <div id="endingNarrative" class="ending-narrative">
+                <!-- Narrative paragraphs inserted here by JS -->
+            </div>
+            
+            <div class="ending-outcome">
+                <p id="endingOutcome"></p>
+            </div>
+
+            <div class="ending-divider"></div>
+
+            <div class="ending-stats">
+                <h3>FINAL STATS</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Health:</span>
+                        <span class="stat-data" id="statHealth">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Sanity:</span>
+                        <span class="stat-data" id="statSanity">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Dragon Trust:</span>
+                        <span class="stat-data" id="statTrust">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Dragon Chosen:</span>
+                        <span class="stat-data" id="statDragon">None</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Lore Notes:</span>
+                        <span class="stat-data" id="statLoreNotes">0/5</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Original Truth:</span>
+                        <span class="stat-data" id="statOriginalTruth">No</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ending-footer">
+                <p class="ending-thanks">Thank you for playing.</p>
+                <p class="ending-credit">ATC Horror Economics Game - Turn 10 Complete</p>
+            </div>
+        </div>
+    </div>
+
     <script src="game.js"></script>
 </body>
 </html>
