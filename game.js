@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 2: PLAYER CONTROLLER + BASIC LEVEL
+// ATC HORROR ECONOMICS GAME - TURN 3: PLAYER STATS SYSTEM
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -33,6 +33,19 @@ const CONSTANTS = {
     ROOM_HEIGHT: 4,
     ROOM_DEPTH: 12,
     WALL_THICKNESS: 0.3,
+    
+    // Stat change amounts (for testing and game use)
+    DAMAGE_MONSTER_CONTACT: 20,
+    DAMAGE_TEST_AMOUNT: 10,
+    SANITY_DRAIN_DARKNESS: 2,
+    SANITY_DRAIN_MONSTER_NEAR: 5,
+    SANITY_DRAIN_LORE_NOTE: 8,
+    SANITY_RESTORE_LIGHT: 1,
+    SANITY_RESTORE_MIST_ABILITY: 10,
+    SANITY_TEST_AMOUNT: 5,
+    BATTERY_DRAIN_RATE: 5,
+    BATTERY_RESTORE_PICKUP: 50,
+    BATTERY_TEST_AMOUNT: 10,
 };
 
 // UI TEXT CONSTANTS (for easy translation)
@@ -47,6 +60,7 @@ const UI_TEXT = {
     DRAGON_BOND_LABEL: "Dragon Bond",
     ABILITY_USES_LABEL: "Ability Uses",
     TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact.",
+    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery",
 };
 
 // ============================================================================
@@ -76,6 +90,147 @@ class GameState {
         this.vaultDoorUnlocked = false;
         this.ritualCompleted = false;
         this.discoveredOriginalDragonTruth = false;
+    }
+    
+    // ========================================================================
+    // STAT MODIFICATION METHODS
+    // ========================================================================
+    
+    takeDamage(amount) {
+        if (amount < 0) {
+            console.warn('takeDamage called with negative amount:', amount);
+            return;
+        }
+        
+        this.health = Math.max(0, this.health - amount);
+        
+        // Check if player died
+        if (this.health === 0) {
+            console.log('Player health reached 0');
+            // Death logic will be added in later turns
+        }
+    }
+    
+    restoreHealth(amount) {
+        if (amount < 0) {
+            console.warn('restoreHealth called with negative amount:', amount);
+            return;
+        }
+        
+        this.health = Math.min(CONSTANTS.PLAYER_HEALTH_MAX, this.health + amount);
+    }
+    
+    drainSanity(amount) {
+        if (amount < 0) {
+            console.warn('drainSanity called with negative amount:', amount);
+            return;
+        }
+        
+        const oldSanity = this.sanity;
+        this.sanity = Math.max(0, this.sanity - amount);
+        
+        // Check sanity thresholds
+        if (oldSanity > 60 && this.sanity <= 60) {
+            console.log('Sanity threshold: Minor hallucinations enabled (≤60)');
+            // Hallucination logic will be added in later turns
+        }
+        
+        if (oldSanity > 30 && this.sanity <= 30) {
+            console.log('Sanity threshold: Fake doors and audio corruption (≤30)');
+        }
+        
+        if (this.sanity === 0) {
+            console.log('Sanity reached 0: UI glitch + monster boost');
+            // Zero sanity effects will be added in later turns
+        }
+    }
+    
+    restoreSanity(amount) {
+        if (amount < 0) {
+            console.warn('restoreSanity called with negative amount:', amount);
+            return;
+        }
+        
+        this.sanity = Math.min(CONSTANTS.PLAYER_SANITY_MAX, this.sanity + amount);
+    }
+    
+    drainBattery(amount) {
+        if (amount < 0) {
+            console.warn('drainBattery called with negative amount:', amount);
+            return;
+        }
+        
+        this.battery = Math.max(0, this.battery - amount);
+        
+        // Auto-turn off flashlight when battery depleted
+        if (this.battery === 0 && this.flashlightOn) {
+            this.flashlightOn = false;
+            console.log('Battery depleted - flashlight auto-off');
+        }
+    }
+    
+    restoreBattery(amount) {
+        if (amount < 0) {
+            console.warn('restoreBattery called with negative amount:', amount);
+            return;
+        }
+        
+        this.battery = Math.min(CONSTANTS.PLAYER_BATTERY_MAX, this.battery + amount);
+    }
+    
+    useAmmo() {
+        if (this.ammo <= 0) {
+            console.warn('useAmmo called but ammo is 0');
+            return false;
+        }
+        
+        this.ammo--;
+        return true;
+    }
+    
+    addAmmo(amount) {
+        if (amount < 0) {
+            console.warn('addAmmo called with negative amount:', amount);
+            return;
+        }
+        
+        this.ammo = Math.min(CONSTANTS.PLAYER_AMMO_MAX, this.ammo + amount);
+    }
+    
+    useDragonAbility() {
+        if (!this.dragon) {
+            console.warn('useDragonAbility called but no dragon exists');
+            return false;
+        }
+        
+        if (this.dragonAbilityUses <= 0) {
+            console.warn('useDragonAbility called but no uses remaining');
+            return false;
+        }
+        
+        this.dragonAbilityUses--;
+        return true;
+    }
+    
+    modifyDragonTrust(amount) {
+        if (!this.dragon) {
+            console.warn('modifyDragonTrust called but no dragon exists');
+            return;
+        }
+        
+        const oldTrust = this.dragonTrust;
+        this.dragonTrust = Math.max(0, Math.min(100, this.dragonTrust + amount));
+        
+        // Check trust threshold transitions
+        if (oldTrust >= 30 && this.dragonTrust < 30) {
+            console.log('Dragon trust: Fractured (< 30) - may refuse commands');
+        } else if (oldTrust < 30 && this.dragonTrust >= 30) {
+            console.log('Dragon trust: Unstable (30-69) - normal behavior');
+        } else if (oldTrust < 70 && this.dragonTrust >= 70) {
+            console.log('Dragon trust: Loyal (≥ 70) - reduced cooldowns, enables endings');
+        } else if (oldTrust >= 70 && this.dragonTrust < 70) {
+            console.log('Dragon trust: Dropped below Loyal threshold');
+        }
     }
 }
 
@@ -402,6 +557,9 @@ class GameManager {
         // Pointer lock state
         this.isPointerLocked = false;
         
+        // Visual effects state
+        this.damageFlashAlpha = 0;
+        
         // DOM references
         this.dom = {
             lockInstruction: document.getElementById('lockInstruction'),
@@ -430,6 +588,8 @@ class GameManager {
         this.setupLevel();
         this.setupPlayer();
         this.setupPointerLock();
+        this.setupTestKeys();
+        this.showTestInfo();
         this.animate();
     }
     
@@ -520,6 +680,71 @@ class GameManager {
         });
     }
     
+    setupTestKeys() {
+        document.addEventListener('keydown', (event) => {
+            // Test keys only work when pointer is locked
+            if (!this.isPointerLocked) return;
+            
+            switch(event.code) {
+                case 'Digit1':
+                    // Test damage
+                    this.state.takeDamage(CONSTANTS.DAMAGE_TEST_AMOUNT);
+                    this.triggerDamageFlash();
+                    console.log(`[TEST] Took ${CONSTANTS.DAMAGE_TEST_AMOUNT} damage. Health: ${this.state.health}`);
+                    break;
+                    
+                case 'Digit2':
+                    // Test sanity drain
+                    this.state.drainSanity(CONSTANTS.SANITY_TEST_AMOUNT);
+                    console.log(`[TEST] Lost ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
+                    break;
+                    
+                case 'Digit3':
+                    // Test sanity restore
+                    this.state.restoreSanity(CONSTANTS.SANITY_TEST_AMOUNT);
+                    console.log(`[TEST] Restored ${CONSTANTS.SANITY_TEST_AMOUNT} sanity. Sanity: ${this.state.sanity}`);
+                    break;
+                    
+                case 'Digit4':
+                    // Test battery drain
+                    this.state.drainBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
+                    console.log(`[TEST] Drained ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
+                    break;
+                    
+                case 'Digit5':
+                    // Test battery restore
+                    this.state.restoreBattery(CONSTANTS.BATTERY_TEST_AMOUNT);
+                    console.log(`[TEST] Restored ${CONSTANTS.BATTERY_TEST_AMOUNT}% battery. Battery: ${this.state.battery}%`);
+                    break;
+            }
+        });
+    }
+    
+    showTestInfo() {
+        // Display test keys info in console
+        console.log('%c' + UI_TEXT.TEST_KEYS_INFO, 'color: #ffaa44; font-weight: bold; font-size: 14px;');
+    }
+    
+    triggerDamageFlash() {
+        // Set damage flash to full opacity, will fade out in update
+        this.damageFlashAlpha = 1.0;
+    }
+    
+    updateDamageFlash(deltaTime) {
+        if (this.damageFlashAlpha > 0) {
+            this.damageFlashAlpha = Math.max(0, this.damageFlashAlpha - deltaTime * 2);
+            
+            // Apply red overlay to renderer
+            if (this.damageFlashAlpha > 0) {
+                const canvas = this.renderer.domElement;
+                canvas.style.boxShadow = `inset 0 0 100px rgba(255, 0, 0, ${this.damageFlashAlpha})`;
+            } else {
+                const canvas = this.renderer.domElement;
+                canvas.style.boxShadow = 'none';
+            }
+        }
+    }
+    
     onWindowResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
@@ -566,6 +791,9 @@ class GameManager {
         if (this.isPointerLocked && this.player) {
             this.player.update(deltaTime, this.levelBuilder.getCollisionGeometry());
         }
+        
+        // Update visual effects
+        this.updateDamageFlash(deltaTime);
         
         // Update HUD
         this.updateHUD();
