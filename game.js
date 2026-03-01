@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 10a: COMPLETE AUDIO SYSTEM
+// ATC HORROR ECONOMICS GAME - TURN 11: POLISH & INTEGRATION COMPLETE
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -86,8 +86,9 @@ const CONSTANTS = {
     MONSTER_RETREAT_DURATION: 8,
     MONSTER_PROXIMITY_SANITY_RANGE: 5,
     MONSTER_ROAM_WAYPOINT_DELAY: 3,
+    MONSTER_STUN_RESIST_COOLDOWN: 6, // TURN 11: Stun resist window
     
-    // Dragon settings (TURN 9)
+    // Dragon settings
     DRAGON_FOLLOW_DISTANCE: 2.0,
     DRAGON_LIGHT_INTENSITY: 1.2,
     DRAGON_LIGHT_DISTANCE: 10,
@@ -98,10 +99,13 @@ const CONSTANTS = {
     DRAGON_ABILITY_VOLT_DURATION: 8000,
     DRAGON_ABILITY_VOLT_MULT: 1.8,
     
+    // TURN 11: Hiding mechanic
+    HIDING_INTERACTION_RANGE: 2.5,
+    
     // Darkness threshold
     DARKNESS_THRESHOLD: 0.5,
 
-    // TURN 10a: Audio constants
+    // Audio constants
     AUDIO_MASTER_GAIN: 0.55,
     AUDIO_UI_GAIN: 0.25,
     AUDIO_AMBIENCE_GAIN: 0.18,
@@ -126,6 +130,9 @@ const UI_TEXT = {
     PRESS_E_FORGE: "Press E to answer the Forge",
     PRESS_E_EGG: "Press E to choose this dragon",
     PRESS_E_RITUAL: "Press E to begin the ritual",
+    PRESS_E_BATTERY: "Press E to collect battery",
+    PRESS_H_HIDE: "Press H to hide", // TURN 11
+    PRESS_H_UNHIDE: "Press H to exit", // TURN 11
     HEALTH_LABEL: "Health",
     SANITY_LABEL: "Sanity",
     AMMO_LABEL: "Stun Rounds",
@@ -173,7 +180,7 @@ const ATC_FEEDBACK = {
     d: "You heard only the rent-ghost ($2700 ÷ 100 = $27) and ignored the materials-demon entirely. But variable costs exist when you produce. Average TOTAL cost includes both. Your truth is incomplete."
 };
 
-// DRAGON TYPES (TURN 9)
+// DRAGON TYPES
 const DRAGON_TYPES = {
     EmberDrake: {
         name: "Ember Drake",
@@ -198,7 +205,7 @@ const DRAGON_TYPES = {
     }
 };
 
-// TURN 10: ENDING DATA
+// ENDING DATA
 const ENDINGS = {
     ENDING_A: {
         title: "ENDING A: THE TRUE BOND",
@@ -245,7 +252,7 @@ const ROOM_WAYPOINTS = [
 ];
 
 // ============================================================================
-// TURN 10a: WEB AUDIO MANAGER (Procedural audio synthesis)
+// WEB AUDIO MANAGER (Procedural audio synthesis)
 // ============================================================================
 class WebAudioManager {
     constructor() {
@@ -612,6 +619,10 @@ class GameState {
         this.speedMultiplier = 1.0;
         this.speedBuffEnd = 0;
         
+        // TURN 11: Hiding state
+        this.isHiding = false;
+        this.currentHidingSpot = null;
+        
         this.phase = 'ENTRANCE';
         
         this.loreNotesCollected = 0;
@@ -624,7 +635,6 @@ class GameState {
         this.sprintStartTime = 0;
         this.lowSanityStartTime = 0;
         
-        // TURN 10: Game over state
         this.gameOver = false;
         this.endingType = null;
     }
@@ -664,10 +674,10 @@ class GameState {
             console.log('Sanity threshold: Minor hallucinations enabled (≤60)');
         }
         if (oldSanity > 30 && this.sanity <= 30) {
-            console.log('Sanity threshold: Fake doors and audio corruption (≤30)');
+            console.log('Sanity threshold: Increased hallucinations + audio distortion (≤30)');
         }
         if (this.sanity === 0) {
-            console.log('Sanity reached 0: UI glitch + monster boost');
+            console.log('Sanity reached 0: UI glitch + monster speed boost');
         }
     }
     
@@ -735,16 +745,29 @@ class GameState {
             console.log('Dragon trust: LOYAL (≥ 70) - Maximum cooperation');
         }
     }
+    
+    // TURN 11: Hiding mechanic
+    enterHiding(hidingSpot) {
+        this.isHiding = true;
+        this.currentHidingSpot = hidingSpot;
+        console.log('[HIDING] Player entered hiding spot');
+    }
+    
+    exitHiding() {
+        this.isHiding = false;
+        this.currentHidingSpot = null;
+        console.log('[HIDING] Player exited hiding spot');
+    }
 }
 
 // ============================================================================
-// DRAGON COMPANION (TURN 9 + TURN 10a audio hooks)
+// DRAGON COMPANION
 // ============================================================================
 class DragonCompanion {
     constructor(type, scene, spawnPosition, audio = null) {
         this.type = type;
         this.scene = scene;
-        this.audio = audio; // TURN 10a
+        this.audio = audio;
         this.dragonData = DRAGON_TYPES[type];
         this.position = spawnPosition.clone();
         this.targetPosition = spawnPosition.clone();
@@ -806,6 +829,9 @@ class DragonCompanion {
     
     update(deltaTime, playerController, monsterAI, gameState) {
         if (!this.active) return;
+        
+        // Don't update if player is hiding
+        if (gameState.isHiding) return;
         
         // Calculate position 2 units behind player
         const playerPos = playerController.position;
@@ -888,7 +914,6 @@ class DragonCompanion {
         
         gameState.dragonAbilityUses--;
 
-        // TURN 10a: Audio feedback
         if (this.audio) this.audio.dragonAbility(this.type);
         
         // Execute ability based on type
@@ -907,13 +932,13 @@ class DragonCompanion {
     abilityEmberStun(monsterAI, gameState) {
         if (!monsterAI) {
             console.log('[EMBER] No threat detected.');
-            gameState.updateDragonTrust(-5); // Wasted ability
+            gameState.updateDragonTrust(-5);
             return false;
         }
         
         if (monsterAI.state === 'RETREAT') {
             console.log('[EMBER] Dragon flames surge, but the threat is already fleeing.');
-            gameState.updateDragonTrust(-3); // Wasted on retreating enemy
+            gameState.updateDragonTrust(-3);
             return false;
         }
         
@@ -953,14 +978,12 @@ class DragonCompanion {
         
         console.log('[VOLT] Dragon lightning surges through you! (1.8x speed for 8s)');
         
-        // Trust increase: Smart use
         gameState.updateDragonTrust(3);
         
         return true;
     }
     
     alertChirp() {
-        // TURN 10a: Audio feedback
         if (this.audio) this.audio.dragonChirp();
         console.log('[DRAGON] *Alert chirp* - Threat nearby!');
     }
@@ -973,7 +996,7 @@ class DragonCompanion {
 }
 
 // ============================================================================
-// VAULT RITUAL MODAL (TURN 10)
+// VAULT RITUAL MODAL
 // ============================================================================
 class VaultRitualModal {
     constructor(gameManager) {
@@ -987,7 +1010,6 @@ class VaultRitualModal {
         const beginBtn = document.getElementById('beginRitualBtn');
         if (beginBtn) {
             beginBtn.addEventListener('click', () => {
-                // TURN 10a: Audio feedback
                 if (this.gameManager.audio) this.gameManager.audio.uiClick();
                 this.performRitual();
             });
@@ -1021,19 +1043,17 @@ class VaultRitualModal {
     performRitual() {
         const state = this.gameManager.state;
         
-        // Mark ritual as completed
         state.ritualCompleted = true;
         state.gameOver = true;
         
-        // Determine ending based on dragon choice and Original Truth
         let endingType;
         
         if (state.dragon.type === 'MistWyrm' && state.discoveredOriginalDragonTruth) {
-            endingType = 'ENDING_A'; // True bond
+            endingType = 'ENDING_A';
         } else if (state.dragon.type === 'MistWyrm' && !state.discoveredOriginalDragonTruth) {
-            endingType = 'ENDING_B'; // Corrupted bond
+            endingType = 'ENDING_B';
         } else {
-            endingType = 'ENDING_C'; // Academy's tool
+            endingType = 'ENDING_C';
         }
         
         state.endingType = endingType;
@@ -1050,7 +1070,6 @@ class VaultRitualModal {
         const ending = ENDINGS[endingType];
         const state = this.gameManager.state;
         
-        // TURN 10a: Audio feedback
         if (this.gameManager.audio) {
             this.gameManager.audio.uiChime(endingType === 'ENDING_A');
             this.gameManager.audio.stopAll();
@@ -1061,7 +1080,6 @@ class VaultRitualModal {
         document.getElementById('endingTitle').textContent = ending.title;
         document.getElementById('endingSubtitle').textContent = ending.subtitle;
         
-        // Build narrative paragraphs
         const narrativeContainer = document.getElementById('endingNarrative');
         narrativeContainer.innerHTML = '';
         ending.narrative.forEach(para => {
@@ -1072,7 +1090,6 @@ class VaultRitualModal {
         
         document.getElementById('endingOutcome').textContent = ending.outcome;
         
-        // Stats
         document.getElementById('statHealth').textContent = Math.floor(state.health);
         document.getElementById('statSanity').textContent = Math.floor(state.sanity);
         document.getElementById('statTrust').textContent = Math.floor(state.dragonTrust);
@@ -1082,13 +1099,12 @@ class VaultRitualModal {
         
         endingModal.classList.remove('hidden');
         
-        // Disable pointer lock
         document.exitPointerLock();
     }
 }
 
 // ============================================================================
-// DRAGON CHOICE MODAL (TURN 9 + TURN 10a audio hooks)
+// DRAGON CHOICE MODAL
 // ============================================================================
 class DragonChoiceModal {
     constructor(gameManager) {
@@ -1102,20 +1118,16 @@ class DragonChoiceModal {
     }
     
     setupEvents() {
-        // Egg selection buttons
         const eggButtons = document.querySelectorAll('.dragon-egg-card');
         eggButtons.forEach(btn => {
             btn.addEventListener('click', () => {
-                // TURN 10a: Audio feedback
                 if (this.gameManager.audio) this.gameManager.audio.uiClick();
                 const dragonType = btn.dataset.dragonType;
                 this.showConfirmation(dragonType);
             });
         });
         
-        // Confirmation buttons
         document.getElementById('confirmDragonChoice').addEventListener('click', () => {
-            // TURN 10a: Audio feedback
             if (this.gameManager.audio) this.gameManager.audio.uiClick();
             if (this.selectedType) {
                 this.chooseDragon(this.selectedType);
@@ -1123,7 +1135,6 @@ class DragonChoiceModal {
         });
         
         document.getElementById('cancelDragonChoice').addEventListener('click', () => {
-            // TURN 10a: Audio feedback
             if (this.gameManager.audio) this.gameManager.audio.uiClick();
             this.hideConfirmation();
         });
@@ -1166,21 +1177,18 @@ class DragonChoiceModal {
         this.gameManager.state.dragonChosen = true;
         this.gameManager.state.vaultDoorUnlocked = true;
         
-        // Spawn dragon (TURN 10a: pass audio manager)
         const spawnPos = this.gameManager.player.position.clone();
         const dragon = new DragonCompanion(
             dragonType,
             this.gameManager.scene,
             spawnPos,
-            this.gameManager.audio // TURN 10a
+            this.gameManager.audio
         );
         
         this.gameManager.state.dragon = dragon;
 
-        // TURN 10a: Audio feedback
         if (this.gameManager.audio) this.gameManager.audio.dragonHatch();
         
-        // Show message
         const dragonData = DRAGON_TYPES[dragonType];
         this.gameManager.showLoreText(
             'Dragon Hatched',
@@ -1190,14 +1198,13 @@ class DragonChoiceModal {
         console.log(`✓ Dragon chosen: ${dragonData.name}`);
         console.log('✓ Vault door UNLOCKED');
         
-        // Hide modals
         this.hideConfirmation();
         this.hide();
     }
 }
 
 // ============================================================================
-// FORGE PUZZLE (TURN 8 + TURN 10a audio hooks)
+// FORGE PUZZLE
 // ============================================================================
 class ForgePuzzle {
     constructor(gameManager) {
@@ -1215,14 +1222,12 @@ class ForgePuzzle {
     setupEvents() {
         document.querySelectorAll('.option-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                // TURN 10a: Audio feedback
                 if (this.gameManager.audio) this.gameManager.audio.uiClick();
                 this.handleAnswer(e.target.dataset.answer);
             });
         });
 
         document.getElementById('continueBtn').addEventListener('click', () => {
-            // TURN 10a: Audio feedback
             if (this.gameManager.audio) this.gameManager.audio.uiClick();
             this.hide();
         });
@@ -1276,7 +1281,6 @@ class ForgePuzzle {
             state.forgePuzzleSolved = true;
             state.restoreSanity(20);
 
-            // TURN 10a: Audio feedback
             if (this.gameManager.audio) this.gameManager.audio.uiChime(true);
 
             console.log('✓ The Forge accepts your truth (ATC correct: a) $30).');
@@ -1285,7 +1289,6 @@ class ForgePuzzle {
             state.drainSanity(12);
             state.hatcheryDoorUnlocked = false;
 
-            // TURN 10a: Audio feedback
             if (this.gameManager.audio) this.gameManager.audio.uiChime(false);
 
             document.body.classList.add('screen-flicker');
@@ -1303,13 +1306,13 @@ class ForgePuzzle {
 }
 
 // ============================================================================
-// MONSTER AI (TURN 7 + TURN 10a audio hooks)
+// MONSTER AI (TURN 11: Stun resist + sanity 0 speed boost)
 // ============================================================================
 class MonsterAI {
     constructor(scene, playerController, audio = null) {
         this.scene = scene;
         this.playerController = playerController;
-        this.audio = audio; // TURN 10a
+        this.audio = audio;
         this.state = 'ROAM';
         this.position = new THREE.Vector3(20, CONSTANTS.MONSTER_HEIGHT / 2, 0);
         this.velocity = new THREE.Vector3();
@@ -1318,7 +1321,11 @@ class MonsterAI {
         this.retreatTimer = 0;
         this.damageCooldown = 0;
 
-        this._footstepTimer = 0; // TURN 10a
+        this._footstepTimer = 0;
+        
+        // TURN 11: Stun resist window
+        this.lastStunTime = 0;
+        this.stunResistActive = false;
         
         this.createMonsterMesh();
     }
@@ -1360,8 +1367,19 @@ class MonsterAI {
             this.retreatTimer -= deltaTime;
             if (this.retreatTimer <= 0) {
                 this.state = 'ROAM';
-                console.log('Monster: Retreat ended, returning to Roam');
+                
+                // TURN 11: Activate stun resist window
+                this.lastStunTime = Date.now();
+                this.stunResistActive = true;
+                
+                console.log('Monster: Retreat ended, returning to Roam (stun resist active for 6s)');
             }
+        }
+        
+        // TURN 11: Check if stun resist window expired
+        if (this.stunResistActive && Date.now() - this.lastStunTime > CONSTANTS.MONSTER_STUN_RESIST_COOLDOWN * 1000) {
+            this.stunResistActive = false;
+            console.log('Monster: Stun resist window expired');
         }
         
         if (this.damageCooldown > 0) {
@@ -1384,11 +1402,9 @@ class MonsterAI {
         this.drainSanityProximity(deltaTime, gameState);
         this.mesh.position.copy(this.position);
 
-        // TURN 10a: Monster footstep audio
         this.updateAudio(deltaTime);
     }
 
-    // TURN 10a: Monster audio
     updateAudio(deltaTime) {
         if (!this.audio) return;
 
@@ -1402,13 +1418,27 @@ class MonsterAI {
     }
     
     updateRoam(deltaTime, gameState) {
+        // TURN 11: Cannot detect player while hiding
+        if (gameState.isHiding) {
+            // Continue roaming
+            if (!this.targetWaypoint || this.waypointDelay > 0) {
+                this.waypointDelay -= deltaTime;
+                if (this.waypointDelay <= 0) {
+                    this.selectRandomWaypoint();
+                }
+                return;
+            }
+            
+            this.moveTowardWaypoint(deltaTime);
+            return;
+        }
+        
         const detectionRange = this.getDetectionRange(gameState.sanity);
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
         if (distanceToPlayer < detectionRange) {
             this.state = 'CHASE';
 
-            // TURN 10a: Audio feedback
             if (this.audio) this.audio.monsterGrowl(0.6);
 
             console.log('Monster: Player detected, entering Chase state');
@@ -1423,6 +1453,10 @@ class MonsterAI {
             return;
         }
         
+        this.moveTowardWaypoint(deltaTime);
+    }
+    
+    moveTowardWaypoint(deltaTime) {
         const direction = new THREE.Vector3();
         direction.subVectors(this.targetWaypoint, this.position);
         direction.y = 0;
@@ -1442,6 +1476,13 @@ class MonsterAI {
     }
     
     updateChase(deltaTime, gameState) {
+        // TURN 11: If player is hiding, lose track
+        if (gameState.isHiding) {
+            this.state = 'ROAM';
+            console.log('Monster: Lost track of player (hiding)');
+            return;
+        }
+        
         const detectionRange = this.getDetectionRange(gameState.sanity);
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
@@ -1456,7 +1497,13 @@ class MonsterAI {
         direction.y = 0;
         direction.normalize();
         
-        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_CHASE_SPEED);
+        // TURN 11: Speed boost when player sanity = 0
+        let chaseSpeed = CONSTANTS.MONSTER_CHASE_SPEED;
+        if (gameState.sanity === 0) {
+            chaseSpeed *= 1.3; // 30% faster when player sanity is 0
+        }
+        
+        this.velocity.copy(direction).multiplyScalar(chaseSpeed);
         
         this.position.x += this.velocity.x * deltaTime;
         this.position.z += this.velocity.z * deltaTime;
@@ -1488,6 +1535,9 @@ class MonsterAI {
     }
     
     checkPlayerCollision(gameState) {
+        // Cannot damage player while hiding
+        if (gameState.isHiding) return;
+        
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
         if (distanceToPlayer < CONSTANTS.MONSTER_ATTACK_RANGE && this.damageCooldown <= 0) {
@@ -1498,6 +1548,9 @@ class MonsterAI {
     }
     
     drainSanityProximity(deltaTime, gameState) {
+        // Cannot drain sanity when player hiding
+        if (gameState.isHiding) return;
+        
         const distanceToPlayer = this.position.distanceTo(this.playerController.position);
         
         if (distanceToPlayer < CONSTANTS.MONSTER_PROXIMITY_SANITY_RANGE && this.state === 'CHASE') {
@@ -1507,6 +1560,12 @@ class MonsterAI {
     }
     
     stun() {
+        // TURN 11: Check stun resist window
+        if (this.stunResistActive) {
+            console.log('Monster: Stun RESISTED! (within 6s cooldown window)');
+            return false;
+        }
+        
         if (this.state === 'RETREAT') {
             console.log('Monster: Already retreating');
             return false;
@@ -1521,7 +1580,6 @@ class MonsterAI {
     forceChase() {
         this.state = 'CHASE';
 
-        // TURN 10a: Audio feedback
         if (this.audio) this.audio.monsterGrowl(0.7);
 
         console.log('Monster: Forced into Chase state (puzzle failed)');
@@ -1529,14 +1587,14 @@ class MonsterAI {
 }
 
 // ============================================================================
-// INTERACTABLE OBJECT (TURN 10a: audio hooks for lore notes)
+// INTERACTABLE OBJECT
 // ============================================================================
 class InteractableObject {
     constructor(type, mesh, data, audio = null) {
         this.type = type;
         this.mesh = mesh;
         this.data = data;
-        this.audio = audio; // TURN 10a
+        this.audio = audio;
         this.collected = false;
     }
     
@@ -1547,12 +1605,10 @@ class InteractableObject {
         
         this.collected = true;
         
-        // TURN 10a: Audio feedback for lore notes
         if (this.type === 'LORE_NOTE' && this.audio) {
             this.audio.uiChime(true);
         }
         
-        // Hide the object
         this.mesh.visible = false;
         
         return {
@@ -1563,14 +1619,40 @@ class InteractableObject {
 }
 
 // ============================================================================
-// INTERACTION SYSTEM (TURN 10a: audio feedback)
+// TURN 11: HIDING SPOT CLASS
+// ============================================================================
+class HidingSpot {
+    constructor(type, mesh, position) {
+        this.type = type; // 'LOCKER'
+        this.mesh = mesh;
+        this.position = position;
+        this.occupied = false;
+    }
+    
+    canEnter() {
+        return !this.occupied;
+    }
+    
+    enter() {
+        this.occupied = true;
+    }
+    
+    exit() {
+        this.occupied = false;
+    }
+}
+
+// ============================================================================
+// INTERACTION SYSTEM (TURN 11: Hiding support + battery pickups)
 // ============================================================================
 class InteractionSystem {
     constructor(playerController, gameManager) {
         this.playerController = playerController;
         this.gameManager = gameManager;
         this.interactables = [];
+        this.hidingSpots = []; // TURN 11
         this.currentTarget = null;
+        this.currentHidingSpot = null; // TURN 11
         this.raycaster = new THREE.Raycaster();
         
         this.setupKeyBindings();
@@ -1581,6 +1663,11 @@ class InteractionSystem {
             if (e.key === 'e' || e.key === 'E') {
                 this.tryInteract();
             }
+            
+            // TURN 11: H key for hiding
+            if (e.key === 'h' || e.key === 'H') {
+                this.tryHiding();
+            }
         });
     }
     
@@ -1588,8 +1675,14 @@ class InteractionSystem {
         this.interactables.push(interactable);
     }
     
+    // TURN 11: Add hiding spot
+    addHidingSpot(hidingSpot) {
+        this.hidingSpots.push(hidingSpot);
+    }
+    
     update() {
         this.currentTarget = null;
+        this.currentHidingSpot = null;
         
         const camera = this.playerController.camera;
         const direction = new THREE.Vector3();
@@ -1598,6 +1691,7 @@ class InteractionSystem {
         this.raycaster.set(camera.position, direction);
         this.raycaster.far = CONSTANTS.INTERACTION_RANGE;
         
+        // Check interactables
         const meshes = this.interactables
             .filter(obj => !obj.collected && obj.mesh.visible)
             .map(obj => obj.mesh);
@@ -1615,11 +1709,35 @@ class InteractionSystem {
             }
         }
         
+        // TURN 11: Check hiding spots
+        if (!this.gameManager.state.isHiding) {
+            for (const spot of this.hidingSpots) {
+                const dist = this.playerController.position.distanceTo(spot.position);
+                if (dist < CONSTANTS.HIDING_INTERACTION_RANGE && spot.canEnter()) {
+                    this.currentHidingSpot = spot;
+                    break;
+                }
+            }
+        }
+        
         this.updateUI();
     }
     
     updateUI() {
         const prompt = document.getElementById('interactionPrompt');
+        
+        // TURN 11: Priority to hiding prompt
+        if (this.gameManager.state.isHiding) {
+            prompt.textContent = UI_TEXT.PRESS_H_UNHIDE;
+            prompt.classList.remove('hidden');
+            return;
+        }
+        
+        if (this.currentHidingSpot) {
+            prompt.textContent = UI_TEXT.PRESS_H_HIDE;
+            prompt.classList.remove('hidden');
+            return;
+        }
         
         if (this.currentTarget) {
             let promptText = UI_TEXT.PRESS_E_INTERACT;
@@ -1630,12 +1748,33 @@ class InteractionSystem {
                 promptText = UI_TEXT.PRESS_E_EGG;
             } else if (this.currentTarget.type === 'VAULT_RITUAL') {
                 promptText = UI_TEXT.PRESS_E_RITUAL;
+            } else if (this.currentTarget.type === 'BATTERY_PICKUP') {
+                promptText = UI_TEXT.PRESS_E_BATTERY;
             }
             
             prompt.textContent = promptText;
             prompt.classList.remove('hidden');
         } else {
             prompt.classList.add('hidden');
+        }
+    }
+    
+    // TURN 11: Hiding mechanic
+    tryHiding() {
+        const state = this.gameManager.state;
+        
+        if (state.isHiding) {
+            // Exit hiding
+            state.exitHiding();
+            if (this.gameManager.audio) this.gameManager.audio.uiClick();
+            return;
+        }
+        
+        if (this.currentHidingSpot && this.currentHidingSpot.canEnter()) {
+            // Enter hiding
+            this.currentHidingSpot.enter();
+            state.enterHiding(this.currentHidingSpot);
+            if (this.gameManager.audio) this.gameManager.audio.uiClick();
         }
     }
     
@@ -1646,7 +1785,6 @@ class InteractionSystem {
         
         if (!result) return;
         
-        // TURN 10a: Audio feedback
         if (this.gameManager.audio) {
             this.gameManager.audio.uiClick();
         }
@@ -1684,12 +1822,11 @@ class InteractionSystem {
     handleBatteryPickup() {
         this.gameManager.state.restoreBattery(CONSTANTS.BATTERY_RESTORE_PICKUP);
         
-        // TURN 10a: Audio feedback
         if (this.gameManager.audio) {
             this.gameManager.audio.uiChime(true);
         }
         
-        console.log(`Battery restored: +${CONSTANTS.BATTERY_RESTORE_PICKUP}`);
+        console.log(`✓ Battery restored: +${CONSTANTS.BATTERY_RESTORE_PICKUP}`);
     }
     
     handleForgeAltar() {
@@ -1712,12 +1849,12 @@ class InteractionSystem {
 }
 
 // ============================================================================
-// PLAYER CONTROLLER (TURN 10a: footstep audio + breathing intensity)
+// PLAYER CONTROLLER
 // ============================================================================
 class PlayerController {
     constructor(camera, audio = null) {
         this.camera = camera;
-        this.audio = audio; // TURN 10a
+        this.audio = audio;
         this.position = new THREE.Vector3(0, CONSTANTS.PLAYER_HEIGHT, 0);
         this.velocity = new THREE.Vector3();
         this.yaw = 0;
@@ -1731,7 +1868,6 @@ class PlayerController {
         
         this.isPointerLocked = false;
 
-        // TURN 10a: Footstep timing
         this._footstepTimer = 0;
         
         this.setupControls();
@@ -1781,6 +1917,13 @@ class PlayerController {
     update(deltaTime, gameState) {
         if (!this.isPointerLocked) return;
         
+        // TURN 11: Cannot move while hiding
+        if (gameState.isHiding) {
+            this.camera.position.copy(this.position);
+            this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+            return;
+        }
+        
         const direction = new THREE.Vector3();
         const right = new THREE.Vector3();
         
@@ -1810,17 +1953,15 @@ class PlayerController {
             moveVector.multiplyScalar(speed * deltaTime);
             this.position.add(moveVector);
 
-            // TURN 10a: Footstep audio
             this.updateFootstepAudio(deltaTime);
         } else {
-            this._footstepTimer = 0; // Reset when not moving
+            this._footstepTimer = 0;
         }
         
         this.camera.position.copy(this.position);
         this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
     }
 
-    // TURN 10a: Footstep audio timing
     updateFootstepAudio(deltaTime) {
         if (!this.audio) return;
 
@@ -1837,7 +1978,7 @@ class PlayerController {
 }
 
 // ============================================================================
-// FLASHLIGHT SYSTEM (unchanged)
+// FLASHLIGHT SYSTEM
 // ============================================================================
 class FlashlightSystem {
     constructor(camera, scene) {
@@ -1879,13 +2020,13 @@ class FlashlightSystem {
 }
 
 // ============================================================================
-// LEVEL BUILDER (unchanged)
+// LEVEL BUILDER (TURN 11: Hiding spots + battery pickups + visual props)
 // ============================================================================
 class LevelBuilder {
     constructor(scene, interactionSystem, audio = null) {
         this.scene = scene;
         this.interactionSystem = interactionSystem;
-        this.audio = audio; // TURN 10a (passed to interactables)
+        this.audio = audio;
     }
     
     buildLevel() {
@@ -1908,6 +2049,9 @@ class LevelBuilder {
         );
         
         this.scene.add(doorToLibrary);
+        
+        // TURN 11: Battery pickup in Entrance
+        this.createBatteryPickup(-3, 0.5, 3);
     }
     
     createLibrary() {
@@ -1931,6 +2075,17 @@ class LevelBuilder {
         );
         
         this.scene.add(doorToForge);
+        
+        // TURN 11: Add 2 lockers for hiding
+        this.createHidingSpot(offsetX - 5, 0, 4);
+        this.createHidingSpot(offsetX - 5, 0, -4);
+        
+        // TURN 11: Battery pickup in Library
+        this.createBatteryPickup(offsetX + 4, 0.5, 4);
+        
+        // TURN 11: Decorative shelves
+        this.createShelf(offsetX - 6, 0, 0);
+        this.createShelf(offsetX + 6, 0, 0);
     }
     
     createForge() {
@@ -1947,6 +2102,13 @@ class LevelBuilder {
         });
         
         this.createForgeAltar(offsetX, 0);
+        
+        // TURN 11: Burnt ledgers on walls
+        this.createBurntLedger(offsetX - CONSTANTS.FORGE_WIDTH / 2 + 0.5, 1.5, 0);
+        this.createBurntLedger(offsetX + CONSTANTS.FORGE_WIDTH / 2 - 0.5, 1.5, 2);
+        
+        // TURN 11: Scribbled equations near altar
+        this.createEquationProp(offsetX - 1.5, 0.1, 1.5);
     }
     
     createHatchery() {
@@ -2052,6 +2214,100 @@ class LevelBuilder {
         console.log(`Lore note placed: ${noteData.title}`);
     }
     
+    // TURN 11: Battery pickup
+    createBatteryPickup(x, y, z) {
+        const geometry = new THREE.CylinderGeometry(0.2, 0.2, 0.4, 8);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x00ff00,
+            emissive: 0x00ff00,
+            emissiveIntensity: 1.5
+        });
+        
+        const batteryMesh = new THREE.Mesh(geometry, material);
+        batteryMesh.position.set(x, y, z);
+        batteryMesh.castShadow = false;
+        
+        this.scene.add(batteryMesh);
+        
+        const interactable = new InteractableObject('BATTERY_PICKUP', batteryMesh, null, this.audio);
+        this.interactionSystem.addInteractable(interactable);
+        
+        console.log(`Battery pickup placed at (${x}, ${y}, ${z})`);
+    }
+    
+    // TURN 11: Hiding spot (locker)
+    createHidingSpot(x, y, z) {
+        const geometry = new THREE.BoxGeometry(1, 2, 0.8);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x444444,
+            roughness: 0.7
+        });
+        
+        const locker = new THREE.Mesh(geometry, material);
+        locker.position.set(x, y + 1, z);
+        locker.castShadow = true;
+        locker.receiveShadow = true;
+        
+        this.scene.add(locker);
+        
+        const hidingSpot = new HidingSpot('LOCKER', locker, new THREE.Vector3(x, y, z));
+        this.interactionSystem.addHidingSpot(hidingSpot);
+        
+        console.log(`Hiding spot (locker) placed at (${x}, ${y}, ${z})`);
+    }
+    
+    // TURN 11: Decorative shelf
+    createShelf(x, y, z) {
+        const geometry = new THREE.BoxGeometry(0.3, 2, 3);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x553300,
+            roughness: 0.9
+        });
+        
+        const shelf = new THREE.Mesh(geometry, material);
+        shelf.position.set(x, y + 1, z);
+        shelf.castShadow = true;
+        shelf.receiveShadow = true;
+        
+        this.scene.add(shelf);
+    }
+    
+    // TURN 11: Burnt ledger prop
+    createBurntLedger(x, y, z) {
+        const geometry = new THREE.PlaneGeometry(0.4, 0.6);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x222222,
+            roughness: 1.0,
+            side: THREE.DoubleSide
+        });
+        
+        const ledger = new THREE.Mesh(geometry, material);
+        ledger.position.set(x, y, z);
+        ledger.rotation.y = Math.PI / 2;
+        ledger.castShadow = false;
+        ledger.receiveShadow = true;
+        
+        this.scene.add(ledger);
+    }
+    
+    // TURN 11: Scribbled equation prop
+    createEquationProp(x, y, z) {
+        const geometry = new THREE.PlaneGeometry(0.8, 0.4);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffeeaa,
+            roughness: 0.9,
+            side: THREE.DoubleSide
+        });
+        
+        const prop = new THREE.Mesh(geometry, material);
+        prop.position.set(x, y, z);
+        prop.rotation.x = -Math.PI / 2;
+        prop.castShadow = false;
+        prop.receiveShadow = true;
+        
+        this.scene.add(prop);
+    }
+    
     createForgeAltar(x, z) {
         const geometry = new THREE.CylinderGeometry(1, 1.2, 1.5, 8);
         const material = new THREE.MeshStandardMaterial({
@@ -2142,7 +2398,7 @@ class LevelBuilder {
 }
 
 // ============================================================================
-// GAME MANAGER (TURN 10a: Full audio integration)
+// GAME MANAGER (TURN 11: Sanity visual effects)
 // ============================================================================
 class GameManager {
     constructor() {
@@ -2163,7 +2419,6 @@ class GameManager {
         this.clock = new THREE.Clock();
         this.lastTime = 0;
 
-        // TURN 10a: Audio manager
         this.audio = new WebAudioManager();
         
         this.init();
@@ -2216,7 +2471,6 @@ class GameManager {
     }
     
     setupPlayer() {
-        // TURN 10a: Pass audio to PlayerController
         this.player = new PlayerController(this.camera, this.audio);
     }
     
@@ -2229,13 +2483,11 @@ class GameManager {
     }
     
     setupLevel() {
-        // TURN 10a: Pass audio to LevelBuilder
         this.levelBuilder = new LevelBuilder(this.scene, this.interactionSystem, this.audio);
         this.levelBuilder.buildLevel();
     }
     
     setupMonster() {
-        // TURN 10a: Pass audio to MonsterAI
         this.monsterAI = new MonsterAI(this.scene, this.player, this.audio);
     }
     
@@ -2300,10 +2552,14 @@ class GameManager {
         startBtn.textContent = UI_TEXT.CLICK_TO_START;
         
         startBtn.addEventListener('click', () => {
-            // TURN 10a: Unlock audio context on first user interaction
             this.audio.unlock();
             
             startScreen.classList.add('hidden');
+            
+            // Show HUD
+            const hud = document.getElementById('hud');
+            hud.classList.remove('hidden');
+            
             document.body.requestPointerLock();
             this.startGame();
         });
@@ -2312,7 +2568,6 @@ class GameManager {
     startGame() {
         console.log('Game started');
 
-        // TURN 10a: Start ambience
         this.audio.startAmbience();
         
         this.animate();
@@ -2352,16 +2607,35 @@ class GameManager {
             this.state.dragon.update(deltaTime, this.player, this.monsterAI, this.state);
         }
 
-        // TURN 10a: Update hallucination audio based on sanity
         this.audio.updateHallucinations(this.state);
 
-        // TURN 10a: Update breathing intensity based on health/sanity
         const breathingIntensity = 1.0 - (this.state.health / CONSTANTS.PLAYER_HEALTH_MAX) * 0.5
             + (1.0 - this.state.sanity / CONSTANTS.PLAYER_SANITY_MAX) * 0.5;
         this.audio.playerBreathingIntensity(breathingIntensity);
         
+        // TURN 11: Sanity visual effects
+        this.updateSanityVisuals();
+        
         this.updateUI();
         this.renderer.render(this.scene, this.camera);
+    }
+    
+    // TURN 11: Visual effects based on sanity
+    updateSanityVisuals() {
+        const body = document.body;
+        
+        if (this.state.sanity === 0) {
+            // UI glitch effect
+            if (!body.classList.contains('ui-glitch')) {
+                body.classList.add('ui-glitch');
+            }
+        } else {
+            body.classList.remove('ui-glitch');
+        }
+        
+        // Vignette intensity based on sanity
+        const vignetteIntensity = 1.0 - (this.state.sanity / CONSTANTS.PLAYER_SANITY_MAX);
+        body.style.setProperty('--vignette-intensity', vignetteIntensity);
     }
     
     updateUI() {
@@ -2377,10 +2651,12 @@ class GameManager {
         const dragonUI = document.getElementById('dragonUI');
         if (this.state.dragon) {
             dragonUI.classList.remove('hidden');
+            dragonUI.style.display = 'block';
             document.getElementById('dragonTrustValue').textContent = Math.floor(this.state.dragonTrust);
             document.getElementById('abilityUsesValue').textContent = this.state.dragonAbilityUses;
         } else {
             dragonUI.classList.add('hidden');
+            dragonUI.style.display = 'none';
         }
     }
     
