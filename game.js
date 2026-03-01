@@ -1,5 +1,5 @@
 // ============================================================================
-// ATC HORROR ECONOMICS GAME - TURN 6: 5 CONNECTED ROOMS
+// ATC HORROR ECONOMICS GAME - TURN 7: MONSTER AI SYSTEM
 // ============================================================================
 
 // CONSTANTS - All magic numbers defined here
@@ -74,6 +74,19 @@ const CONSTANTS = {
     LORE_NOTE_SIZE: 0.3,
     LORE_LOG_DURATION: 5000,
     
+    // Monster settings
+    MONSTER_ROAM_SPEED: 2.0,
+    MONSTER_CHASE_SPEED: 4.5,
+    MONSTER_RETREAT_SPEED: 3.0,
+    MONSTER_HEIGHT: 2.0,
+    MONSTER_RADIUS: 0.5,
+    MONSTER_DETECTION_BASE: 8,
+    MONSTER_DETECTION_SANITY_MULT: 0.08,
+    MONSTER_ATTACK_RANGE: 1.5,
+    MONSTER_RETREAT_DURATION: 8,
+    MONSTER_PROXIMITY_SANITY_RANGE: 5,
+    MONSTER_ROAM_WAYPOINT_DELAY: 3,
+    
     // Darkness threshold
     DARKNESS_THRESHOLD: 0.5,
 };
@@ -89,8 +102,8 @@ const UI_TEXT = {
     FLASHLIGHT_LABEL: "Flashlight",
     DRAGON_BOND_LABEL: "Dragon Bond",
     ABILITY_USES_LABEL: "Ability Uses",
-    TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact.",
-    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Flashlight, E: Interact",
+    TUTORIAL_TEXT: "WASD to move. Shift to sprint. F for flashlight. E to interact. Q to stun.",
+    TEST_KEYS_INFO: "[TEST MODE] 1: Damage, 2: Drain Sanity, 3: Restore Sanity, 4: Drain Battery, 5: Restore Battery, F: Flashlight, E: Interact, Q: Stun",
 };
 
 // ATC LORE NOTE TEXTS (MANDATORY EDUCATIONAL CONTENT)
@@ -113,27 +126,32 @@ const LORE_NOTES = {
     }
 };
 
+// Room waypoints for monster navigation
+const ROOM_WAYPOINTS = [
+    { name: 'Entrance', x: 0, z: 0 },
+    { name: 'Library', x: 20, z: 0 },
+    { name: 'Forge', x: 35, z: 0 },
+    { name: 'Hatchery', x: 35, z: -15 },
+    { name: 'Vault', x: 35, z: -30 }
+];
+
 // ============================================================================
 // GAME STATE
 // ============================================================================
 class GameState {
     constructor() {
-        // Player stats
         this.health = CONSTANTS.PLAYER_HEALTH_MAX;
         this.sanity = CONSTANTS.PLAYER_SANITY_MAX;
         this.ammo = CONSTANTS.PLAYER_AMMO_MAX;
         this.battery = CONSTANTS.PLAYER_BATTERY_MAX;
         this.flashlightOn = false;
         
-        // Dragon state
         this.dragon = null;
         this.dragonTrust = 50;
         this.dragonAbilityUses = 3;
         
-        // Game phase
         this.phase = 'ENTRANCE';
         
-        // Progress flags
         this.loreNotesCollected = 0;
         this.forgePuzzleSolved = false;
         this.hatcheryDoorUnlocked = false;
@@ -219,6 +237,233 @@ class GameState {
 }
 
 // ============================================================================
+// MONSTER AI
+// ============================================================================
+class MonsterAI {
+    constructor(scene, playerController) {
+        this.scene = scene;
+        this.playerController = playerController;
+        
+        // State: 'ROAM', 'CHASE', 'RETREAT'
+        this.state = 'ROAM';
+        
+        // Position and movement
+        this.position = new THREE.Vector3(20, CONSTANTS.MONSTER_HEIGHT / 2, 0); // Start in Library
+        this.velocity = new THREE.Vector3();
+        this.targetWaypoint = null;
+        this.waypointDelay = 0;
+        
+        // Retreat timer
+        this.retreatTimer = 0;
+        
+        // Damage cooldown
+        this.damageCooldown = 0;
+        
+        // Create monster mesh
+        this.createMonsterMesh();
+    }
+    
+    createMonsterMesh() {
+        // Simple placeholder geometry (tall box)
+        const geometry = new THREE.BoxGeometry(0.8, CONSTANTS.MONSTER_HEIGHT, 0.6);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x220000,
+            emissive: 0x440000,
+            emissiveIntensity: 0.5,
+            roughness: 0.8
+        });
+        
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
+        this.mesh.position.copy(this.position);
+        
+        // Add glowing eyes
+        const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+        const eyeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 2
+        });
+        
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(-0.2, CONSTANTS.MONSTER_HEIGHT * 0.35, 0.31);
+        this.mesh.add(leftEye);
+        
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(0.2, CONSTANTS.MONSTER_HEIGHT * 0.35, 0.31);
+        this.mesh.add(rightEye);
+        
+        this.scene.add(this.mesh);
+    }
+    
+    update(deltaTime, gameState) {
+        // Update timers
+        if (this.retreatTimer > 0) {
+            this.retreatTimer -= deltaTime;
+            if (this.retreatTimer <= 0) {
+                this.state = 'ROAM';
+                console.log('Monster: Retreat ended, returning to Roam');
+            }
+        }
+        
+        if (this.damageCooldown > 0) {
+            this.damageCooldown -= deltaTime;
+        }
+        
+        // State machine
+        switch(this.state) {
+            case 'ROAM':
+                this.updateRoam(deltaTime, gameState);
+                break;
+            case 'CHASE':
+                this.updateChase(deltaTime, gameState);
+                break;
+            case 'RETREAT':
+                this.updateRetreat(deltaTime);
+                break;
+        }
+        
+        // Check for player collision and deal damage
+        this.checkPlayerCollision(gameState);
+        
+        // Drain sanity if monster is nearby
+        this.drainSanityProximity(deltaTime, gameState);
+        
+        // Update mesh position
+        this.mesh.position.copy(this.position);
+    }
+    
+    updateRoam(deltaTime, gameState) {
+        // Check if player should be detected
+        const detectionRange = this.getDetectionRange(gameState.sanity);
+        const distanceToPlayer = this.position.distanceTo(this.playerController.position);
+        
+        if (distanceToPlayer < detectionRange) {
+            this.state = 'CHASE';
+            console.log('Monster: Player detected, entering Chase state');
+            return;
+        }
+        
+        // Roam to random waypoints
+        if (!this.targetWaypoint || this.waypointDelay > 0) {
+            this.waypointDelay -= deltaTime;
+            if (this.waypointDelay <= 0) {
+                this.selectRandomWaypoint();
+            }
+            return;
+        }
+        
+        // Move toward waypoint
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.targetWaypoint, this.position);
+        direction.y = 0;
+        
+        const distance = direction.length();
+        if (distance < 1) {
+            // Reached waypoint
+            this.targetWaypoint = null;
+            this.waypointDelay = CONSTANTS.MONSTER_ROAM_WAYPOINT_DELAY;
+            return;
+        }
+        
+        direction.normalize();
+        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_ROAM_SPEED);
+        
+        this.position.x += this.velocity.x * deltaTime;
+        this.position.z += this.velocity.z * deltaTime;
+    }
+    
+    updateChase(deltaTime, gameState) {
+        // Check if should stop chasing (player too far or retreating)
+        const detectionRange = this.getDetectionRange(gameState.sanity);
+        const distanceToPlayer = this.position.distanceTo(this.playerController.position);
+        
+        if (distanceToPlayer > detectionRange * 1.5) {
+            this.state = 'ROAM';
+            console.log('Monster: Lost player, returning to Roam');
+            return;
+        }
+        
+        // Chase player
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.playerController.position, this.position);
+        direction.y = 0;
+        direction.normalize();
+        
+        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_CHASE_SPEED);
+        
+        this.position.x += this.velocity.x * deltaTime;
+        this.position.z += this.velocity.z * deltaTime;
+        
+        // Face player
+        this.mesh.lookAt(this.playerController.position);
+    }
+    
+    updateRetreat(deltaTime) {
+        // Retreat away from player
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.position, this.playerController.position);
+        direction.y = 0;
+        direction.normalize();
+        
+        this.velocity.copy(direction).multiplyScalar(CONSTANTS.MONSTER_RETREAT_SPEED);
+        
+        this.position.x += this.velocity.x * deltaTime;
+        this.position.z += this.velocity.z * deltaTime;
+    }
+    
+    selectRandomWaypoint() {
+        const randomIndex = Math.floor(Math.random() * ROOM_WAYPOINTS.length);
+        const waypoint = ROOM_WAYPOINTS[randomIndex];
+        this.targetWaypoint = new THREE.Vector3(waypoint.x, this.position.y, waypoint.z);
+        console.log(`Monster: Roaming to ${waypoint.name}`);
+    }
+    
+    getDetectionRange(playerSanity) {
+        // Higher sanity = easier to detect (player more "visible")
+        return CONSTANTS.MONSTER_DETECTION_BASE + (playerSanity * CONSTANTS.MONSTER_DETECTION_SANITY_MULT);
+    }
+    
+    checkPlayerCollision(gameState) {
+        const distanceToPlayer = this.position.distanceTo(this.playerController.position);
+        
+        if (distanceToPlayer < CONSTANTS.MONSTER_ATTACK_RANGE && this.damageCooldown <= 0) {
+            gameState.takeDamage(CONSTANTS.DAMAGE_MONSTER_CONTACT);
+            this.damageCooldown = 1.0; // 1 second cooldown
+            console.log(`Monster: Contact! Player took ${CONSTANTS.DAMAGE_MONSTER_CONTACT} damage`);
+        }
+    }
+    
+    drainSanityProximity(deltaTime, gameState) {
+        const distanceToPlayer = this.position.distanceTo(this.playerController.position);
+        
+        if (distanceToPlayer < CONSTANTS.MONSTER_PROXIMITY_SANITY_RANGE && this.state === 'CHASE') {
+            const drainAmount = CONSTANTS.SANITY_DRAIN_MONSTER_NEAR * deltaTime;
+            gameState.drainSanity(drainAmount);
+        }
+    }
+    
+    stun() {
+        if (this.state === 'RETREAT') {
+            console.log('Monster: Already retreating');
+            return false;
+        }
+        
+        this.state = 'RETREAT';
+        this.retreatTimer = CONSTANTS.MONSTER_RETREAT_DURATION;
+        console.log('Monster: Stunned! Retreating for 8 seconds');
+        return true;
+    }
+    
+    forceChase() {
+        // Called when player gets forge puzzle wrong
+        this.state = 'CHASE';
+        console.log('Monster: Forced into Chase state (puzzle failed)');
+    }
+}
+
+// ============================================================================
 // INTERACTABLE OBJECT
 // ============================================================================
 class InteractableObject {
@@ -246,7 +491,6 @@ class InteractableObject {
         gameManager.showLoreText(this.data.title, this.data.text);
         gameManager.state.collectLoreNote();
         
-        // Remove glow light
         if (this.mesh.userData.light) {
             gameManager.scene.remove(this.mesh.userData.light);
         }
@@ -475,13 +719,6 @@ class LevelBuilder {
     }
     
     build5Rooms() {
-        // Room layout:
-        // Entrance (0, 0) → Library (20, 0) → Forge (35, 0)
-        //                                    ↓
-        //                                Hatchery (35, -15)
-        //                                    ↓
-        //                                  Vault (35, -30)
-        
         this.buildEntrance();
         this.buildLibrary();
         this.buildForge();
@@ -496,14 +733,8 @@ class LevelBuilder {
         const depth = CONSTANTS.ENTRANCE_DEPTH;
         
         this.buildRoom(offsetX, offsetZ, width, depth, 0x2a2d35);
-        
-        // Doorway to Library (east wall)
         this.createDoorway(offsetX + width/2, offsetZ, 'east');
-        
-        // Add entrance props
         this.addEntranceProps(offsetX, offsetZ);
-        
-        // Add 1 lore note in entrance
         this.createLoreNote(
             { x: offsetX - 3, y: 1.2, z: offsetZ + 3 },
             LORE_NOTES.NOTE_1
@@ -517,17 +748,10 @@ class LevelBuilder {
         const depth = CONSTANTS.LIBRARY_DEPTH;
         
         this.buildRoom(offsetX, offsetZ, width, depth, 0x252830);
-        
-        // Doorway to Entrance (west wall)
         this.createDoorway(offsetX - width/2, offsetZ, 'west');
-        
-        // Doorway to Forge (east wall)
         this.createDoorway(offsetX + width/2, offsetZ, 'east');
-        
-        // Add library props (bookshelves)
         this.addLibraryProps(offsetX, offsetZ);
         
-        // Add 3 lore notes in library (ATC pre-teaching)
         this.createLoreNote(
             { x: offsetX - 5, y: 1.2, z: offsetZ - 4 },
             LORE_NOTES.NOTE_2
@@ -549,14 +773,8 @@ class LevelBuilder {
         const depth = CONSTANTS.FORGE_DEPTH;
         
         this.buildRoom(offsetX, offsetZ, width, depth, 0x3a2520);
-        
-        // Doorway to Library (west wall)
         this.createDoorway(offsetX - width/2, offsetZ, 'west');
-        
-        // Doorway to Hatchery (south wall)
         this.createDoorway(offsetX, offsetZ - depth/2, 'south');
-        
-        // Add forge props (console will be added in Turn 8)
         this.addForgeProps(offsetX, offsetZ);
     }
     
@@ -567,14 +785,8 @@ class LevelBuilder {
         const depth = CONSTANTS.HATCHERY_DEPTH;
         
         this.buildRoom(offsetX, offsetZ, width, depth, 0x202a30);
-        
-        // Doorway to Forge (north wall)
         this.createDoorway(offsetX, offsetZ + depth/2, 'north');
-        
-        // Doorway to Vault (south wall) - will be locked initially
         this.createDoorway(offsetX, offsetZ - depth/2, 'south');
-        
-        // Add hatchery props (dragon pedestals in Turn 9)
         this.addHatcheryProps(offsetX, offsetZ);
     }
     
@@ -585,11 +797,7 @@ class LevelBuilder {
         const depth = CONSTANTS.VAULT_DEPTH;
         
         this.buildRoom(offsetX, offsetZ, width, depth, 0x1a1520);
-        
-        // Doorway to Hatchery (north wall) - will be locked initially
         this.createDoorway(offsetX, offsetZ + depth/2, 'north');
-        
-        // Add vault props (ritual circle in Turn 10)
         this.addVaultProps(offsetX, offsetZ);
     }
     
@@ -609,7 +817,6 @@ class LevelBuilder {
             metalness: 0.1
         });
         
-        // Floor
         const floor = new THREE.Mesh(
             new THREE.BoxGeometry(width, wallThickness, depth),
             floorMaterial
@@ -623,7 +830,6 @@ class LevelBuilder {
             size: new THREE.Vector3(width, wallThickness, depth)
         });
         
-        // Ceiling
         const ceiling = new THREE.Mesh(
             new THREE.BoxGeometry(width, wallThickness, depth),
             wallMaterial
@@ -632,14 +838,12 @@ class LevelBuilder {
         ceiling.receiveShadow = true;
         this.scene.add(ceiling);
         
-        // Walls (will have doorways cut out)
         this.buildWalls(offsetX, offsetZ, width, depth, height, wallMaterial);
     }
     
     buildWalls(offsetX, offsetZ, width, depth, height, material) {
         const wallThickness = CONSTANTS.WALL_THICKNESS;
         
-        // North wall
         const northWall = new THREE.Mesh(
             new THREE.BoxGeometry(width, height, wallThickness),
             material
@@ -647,7 +851,6 @@ class LevelBuilder {
         northWall.position.set(offsetX, height/2, offsetZ + depth/2);
         northWall.castShadow = true;
         northWall.receiveShadow = true;
-        northWall.userData.roomWall = 'north';
         this.scene.add(northWall);
         
         this.collisionGeometry.push({
@@ -655,7 +858,6 @@ class LevelBuilder {
             size: new THREE.Vector3(width, height, wallThickness)
         });
         
-        // South wall
         const southWall = new THREE.Mesh(
             new THREE.BoxGeometry(width, height, wallThickness),
             material
@@ -663,7 +865,6 @@ class LevelBuilder {
         southWall.position.set(offsetX, height/2, offsetZ - depth/2);
         southWall.castShadow = true;
         southWall.receiveShadow = true;
-        southWall.userData.roomWall = 'south';
         this.scene.add(southWall);
         
         this.collisionGeometry.push({
@@ -671,7 +872,6 @@ class LevelBuilder {
             size: new THREE.Vector3(width, height, wallThickness)
         });
         
-        // East wall
         const eastWall = new THREE.Mesh(
             new THREE.BoxGeometry(wallThickness, height, depth),
             material
@@ -679,7 +879,6 @@ class LevelBuilder {
         eastWall.position.set(offsetX + width/2, height/2, offsetZ);
         eastWall.castShadow = true;
         eastWall.receiveShadow = true;
-        eastWall.userData.roomWall = 'east';
         this.scene.add(eastWall);
         
         this.collisionGeometry.push({
@@ -687,7 +886,6 @@ class LevelBuilder {
             size: new THREE.Vector3(wallThickness, height, depth)
         });
         
-        // West wall
         const westWall = new THREE.Mesh(
             new THREE.BoxGeometry(wallThickness, height, depth),
             material
@@ -695,7 +893,6 @@ class LevelBuilder {
         westWall.position.set(offsetX - width/2, height/2, offsetZ);
         westWall.castShadow = true;
         westWall.receiveShadow = true;
-        westWall.userData.roomWall = 'west';
         this.scene.add(westWall);
         
         this.collisionGeometry.push({
@@ -705,18 +902,10 @@ class LevelBuilder {
     }
     
     createDoorway(x, z, direction) {
-        // Remove collision at doorway location
-        // For simplicity, doorways are just gaps in walls (collision removal)
-        // Actual door objects will be added in later turns
-        const doorwayWidth = CONSTANTS.DOORWAY_WIDTH;
-        
-        // Remove wall collision in doorway area
-        // This is simplified - in production would use CSG or segment walls
-        // For now, doorways are always passable
+        // Doorways are passable gaps in walls
     }
     
     addEntranceProps(offsetX, offsetZ) {
-        // Simple table
         const tableMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x3d2f1f,
             roughness: 0.7
@@ -733,13 +922,11 @@ class LevelBuilder {
     }
     
     addLibraryProps(offsetX, offsetZ) {
-        // Bookshelves
         const shelfMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x4a3520,
             roughness: 0.8
         });
         
-        // North wall bookshelves
         for (let i = -2; i <= 2; i++) {
             const shelf = new THREE.Mesh(
                 new THREE.BoxGeometry(1.5, 2, 0.4),
@@ -753,7 +940,6 @@ class LevelBuilder {
     }
     
     addForgeProps(offsetX, offsetZ) {
-        // Forge anvil
         const anvilMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x505050,
             roughness: 0.5,
@@ -771,7 +957,6 @@ class LevelBuilder {
     }
     
     addHatcheryProps(offsetX, offsetZ) {
-        // Placeholder pedestals (dragon selection in Turn 9)
         const pedestalMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x404050,
             roughness: 0.6,
@@ -797,7 +982,6 @@ class LevelBuilder {
     }
     
     addVaultProps(offsetX, offsetZ) {
-        // Ritual circle (placeholder)
         const circleMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x8844aa,
             roughness: 0.9,
@@ -856,6 +1040,7 @@ class GameManager {
         this.levelBuilder = null;
         this.flashlightSystem = null;
         this.interactionSystem = null;
+        this.monsterAI = null;
         this.clock = new THREE.Clock();
         
         this.isPointerLocked = false;
@@ -890,6 +1075,7 @@ class GameManager {
         this.setupPlayer();
         this.setupFlashlight();
         this.setupInteractions();
+        this.setupMonster();
         this.setupPointerLock();
         this.setupGameKeys();
         this.setupTestKeys();
@@ -950,6 +1136,10 @@ class GameManager {
         this.interactionSystem = new InteractionSystem(this.camera, this.scene);
     }
     
+    setupMonster() {
+        this.monsterAI = new MonsterAI(this.scene, this.player);
+    }
+    
     setupPointerLock() {
         const canvas = this.renderer.domElement;
         
@@ -994,6 +1184,16 @@ class GameManager {
                     break;
                 case 'KeyE':
                     this.interactionSystem.interact(this);
+                    break;
+                case 'KeyQ':
+                    // Stun gun
+                    if (this.state.useAmmo()) {
+                        this.monsterAI.stun();
+                        this.triggerDamageFlash(); // Visual feedback
+                        console.log(`[STUN] Used stun round. Ammo remaining: ${this.state.ammo}`);
+                    } else {
+                        console.log('[STUN] No ammo remaining!');
+                    }
                     break;
             }
         });
@@ -1141,6 +1341,12 @@ class GameManager {
         this.updateSanityDrain(deltaTime);
         this.updateInteractions();
         this.updateDamageFlash(deltaTime);
+        
+        // Update monster AI
+        if (this.monsterAI) {
+            this.monsterAI.update(deltaTime, this.state);
+        }
+        
         this.updateHUD();
     }
     
