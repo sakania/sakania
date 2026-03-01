@@ -991,6 +991,30 @@ canvas {
     font-size: 14px;
     color: #7788aa;
     font-family: 'Courier New', monospace;
+    margin-bottom: 25px;
+}
+
+/* FIX #1: Restart Button */
+.restart-btn {
+    background: linear-gradient(135deg, var(--dragon-color), #cc6600);
+    color: #000;
+    border: none;
+    padding: 16px 40px;
+    font-size: 20px;
+    font-weight: bold;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 0 30px rgba(255, 170, 68, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border: 2px solid #ffaa44;
+}
+
+.restart-btn:hover {
+    background: linear-gradient(135deg, #ffcc66, var(--dragon-color));
+    box-shadow: 0 0 50px rgba(255, 170, 68, 0.8);
+    transform: scale(1.05);
 }
 
 .hidden {
@@ -1007,6 +1031,16 @@ canvas {
     50% { opacity: 0.25; }
 }
 
+/* FIX #5: Damage Flash Effect */
+body.damage-flash {
+    animation: damage-flash 0.5s ease-out;
+}
+
+@keyframes damage-flash {
+    0% { background-color: rgba(255, 0, 0, 0.5); }
+    100% { background-color: transparent; }
+}
+
 /* Glitch Effect */
 body.glitch {
     animation: glitch 0.22s infinite steps(2);
@@ -1018,7 +1052,7 @@ body.glitch {
     100% { filter: hue-rotate(-24deg) contrast(0.9); transform: translate(-1px,1px); }
 }
 
-/* TURN 11: Low Sanity Vignette Effect */
+/* FIX #8: Low Sanity Vignette Effect */
 #vignette {
     position: fixed;
     inset: 0;
@@ -1034,11 +1068,7 @@ body.glitch {
     );
 }
 
-#vignette.active {
-    opacity: 1;
-}
-
-/* UI Glitch Animation (distinct from body glitch) */
+/* FIX #7: UI Glitch Animation (applied to HUD) */
 #hud.ui-glitch {
     animation: ui-glitch 0.3s steps(3) infinite;
 }
