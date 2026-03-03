@@ -716,6 +716,7 @@ class LevelBuilder {
     }
     
     addEntranceProps(offsetX, offsetZ) {
+        /* TEMPORARILY DISABLED - Floating wooden table
         // Simple table
         const tableMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x3d2f1f,
@@ -730,6 +731,7 @@ class LevelBuilder {
         tableTop.castShadow = true;
         tableTop.receiveShadow = true;
         this.scene.add(tableTop);
+        */
     }
     
     addLibraryProps(offsetX, offsetZ) {
@@ -916,10 +918,10 @@ class GameManager {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
         
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.05);
         this.scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.15);
         directionalLight.position.set(5, 10, 5);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -50;
